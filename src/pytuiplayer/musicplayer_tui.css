@@ -1,0 +1,72 @@
+/* ===========================
+   Header / Footer
+=========================== */
+Header {
+    background: #1e1e2e;
+    color: #ffffff;
+    height: 3;
+    padding: 1 2;
+}
+
+Footer {
+    background: #1e1e2e;
+    color: #c0c0c0;
+    height: 2;
+    padding: 0 2;
+}
+
+/* ===========================
+   Lists: Stations / Local files
+=========================== */
+ListView {
+    border: round #5f5fff;
+    padding: 1;
+    margin: 1;
+    background: #2e2e3e;
+}
+
+ListItem {
+    padding: 0 1;
+    height: 1;
+}
+
+/* Highlight selected item */
+ListItem.--highlight {
+    background: #5f5fff;
+    color: #ffffff;
+}
+
+/* ===========================
+   Labels
+=========================== */
+Label {
+    color: #ffffff;
+}
+
+/* ===========================
+   Buttons
+=========================== */
+Button {
+    background: #5f5fff;
+    color: #ffffff;
+    padding: 0 2;
+    border: round #ffffff;
+    margin: 0 1;
+}
+
+Button.--hover {
+    background: #7f7fff;
+    color: #ffffff;
+}
+
+Button.--focus {
+    border: round #ffdf00;
+}
+
+/* ===========================
+   General Layout
+=========================== */
+View {
+    background: #1e1e2e;
+}
+
