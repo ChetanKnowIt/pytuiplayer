@@ -83,7 +83,7 @@ python music_player.py
 * [Textual](https://textual.textualize.io/)
 * [pytuiplayer](https://github.com/Flamm3o/pytuiplayer)
 * [mpv](https://mpv.io/)
-
+- [HQ Radio](https://github.com/Pulham/Internet-Radio-HQ-URL-playlists)
 ## Screenshots
 
 *(TODO  screenshots of interface)*

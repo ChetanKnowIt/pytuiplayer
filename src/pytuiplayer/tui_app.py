@@ -7,8 +7,6 @@ import os
 from pytuiplayer.mpv_player import MPVPlayer
 from pytuiplayer.station_player import StationPlayer
 import json
-
-
 from textual.widgets import Static
 from textual.message import Message
 from textual.reactive import reactive
@@ -55,27 +53,19 @@ class NowPlaying(Static):
         return f"{m:02d}:{s:02d}"
 
     def _marquee(self, width: int | None = None) -> str:
-        """Generate a scrolling marquee for long titles.
-        
-        If width is not provided, returns the full title without scrolling,
-        allowing the Textual rendering engine to handle width constraints.
-        """
         text = self.title or ""
-        if not text or text == "Nothing playing":
+        if not text or text == "Nothing playing" or width is None:
             return text
         
-        # If no width specified, return full text and let Textual handle overflow
-        if width is None:
-            return text
-        
-        # If text fits in width, return as-is
         if len(text) <= width:
             return text
-        
-        # create a repeated buffer and slice according to offset
+                
         buf = text + "   " + text
-        start = self._offset % len(text)
-        return buf[start:start + width]
+        start = self._offset
+        slice_end = start + width
+        if slice_end > len(buf):
+            slice_end = len(buf)
+        return buf[start:slice_end]
 
     def render(self) -> str:
         # countdown (remaining) to show at top-left
@@ -87,24 +77,44 @@ class NowPlaying(Static):
             remaining = None
 
         countdown = self._fmt_mmss(remaining) if remaining is not None else "--:--"
-        
-        # Display title with marquee effect
-        marquee = self._marquee() or self.title or "Nothing playing"
-        
+
+        title_text = self.title or "Nothing playing"
+
+        # Determine whether to use a scrolling marquee based on available width.
+        try:
+            size = getattr(self, "size", None)
+            if size and getattr(size, "width", 0):
+                total_width = size.width
+                # Reserved characters for countdown, labels, source and state
+                reserved = len(f"[{countdown}] Now Playing: ")
+                if self.source:
+                    reserved += len(f" | {self.source}")
+                reserved += len(self.state or "") + 2
+                avail = max(0, total_width - reserved)
+                if avail > 10 and len(title_text) > avail:
+                    marquee = self._marquee(avail)
+                else:
+                    marquee = title_text
+            else:
+                # In contexts where widget size isn't available (tests), prefer
+                # non-scrolling full text so assertions are deterministic.
+                marquee = self._marquee() or title_text
+        except Exception:
+            marquee = self._marquee() or title_text
+
         # Build compact display: [countdown] Title | Source | State
-        # Format: "[-:--] Now Playing: Title | Source ▶"
         parts = [f"[{countdown}]", "Now Playing:"]
-        
-        if self.title and self.title != "Nothing playing":
+
+        if title_text and title_text != "Nothing playing":
             parts.append(marquee)
         else:
             parts.append("Nothing playing")
-        
+
         if self.source:
             parts.append(f"| {self.source}")
-        
+
         parts.append(self.state)
-        
+
         return " ".join(parts)
 
 
@@ -142,13 +152,21 @@ class ProgressBar(Static):
         except Exception:
             ratio = 0.0
 
-        filled = int(ratio * 20)
-        bar = "█" * filled + "░" * (20 - filled)
+        filled = int(ratio * 160)
+        bar = "█" * filled + "░" * (160 - filled)
 
         elapsed = self._fmt_mmss(self.progress)
         total = self._fmt_mmss(self.duration)
 
         return f"[{bar}] {elapsed} / {total}"
+
+
+class VolumeIndicator(Static):
+    volume = reactive(50)
+    muted = reactive(False)
+    def render(self) -> str:
+        vol = "🔇" if self.muted else f"🔊{self.volume}"
+        return f"Volume: {vol}"
 
 
 class MusicPlayerApp(App):
@@ -195,16 +213,17 @@ class MusicPlayerApp(App):
         yield Header()
         yield Footer()
         # Full-width now playing display at top
+
         yield NowPlaying(id="now-playing")
-        
+        yield ProgressBar(id="progress")
+            
         # Playback controls
-        with Horizontal(id="controls"):
+        with Horizontal(id="controls"):    
             yield Button("▶ Play", id="play")
             yield Button("⏸ Pause", id="pause")
             yield Button("⏹ Stop", id="stop")
-        
-        # Progress bar
-        yield ProgressBar(id="progress")
+            yield VolumeIndicator(id="volume-indicator")
+            
         
         # Main content: mode selector and lists
         with Horizontal(id="main-content"):

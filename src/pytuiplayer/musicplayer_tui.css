@@ -29,12 +29,12 @@ Footer {
 =========================== */
 #now-playing {
     border: round #ff9e00;
-    padding: 1 2;
+    padding: 1 1;
     margin: 1;
     background: #0b0b0b;
     text-style: bold;
     color: #ffd24a;
-    height: 4;
+    height: 6;
     content-align: left middle;
 }
 
@@ -42,19 +42,17 @@ Footer {
    Control Buttons
 =========================== */
 #controls {
-    padding: 0 1;
-    margin: 0 1;
+    padding: 1 1;
+    margin: 1 1;
     content-align: center middle;
-    height: 3;
+    height: 6;
 }
 
 #controls Button {
     background: #ff9e00;
     color: #0b0b0b;
     border: round #ffd24a;
-    padding: 0 3;
-    margin: 0 1;
-    width: 12;
+    
 }
 
 #controls Button:hover {
@@ -65,15 +63,25 @@ Footer {
     border: round #ffd24a;
 }
 
+#volume-indicator{
+    background: #ff9e00;
+    color: #0b0b0b;
+    border: round #ffd24a;
+    padding: 0 0;
+    margin: 0 0;
+    height: 3;
+    width: 15;
+}
 /* ===========================
    Progress Bar - Full Width
 =========================== */
 #progress {
-    padding: 0 2;
-    margin: 0 1;
+    padding: 1 1;
+    margin: 1;
     color: #39ff14;
     text-style: bold;
-    height: 2;
+    content-align: left middle;
+    width:640;
 }
 
 /* ===========================
@@ -85,7 +93,7 @@ Footer {
 
 #sidebar {
     width: 20;
-    border: round #333;
+    border: round #ff9e00;
     padding: 1;
     margin: 1;
     background: #0f0f0f;
