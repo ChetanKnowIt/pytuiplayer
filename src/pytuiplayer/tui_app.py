@@ -32,22 +32,46 @@ class NowPlaying(Static):
     def on_now_playing_message(self, message: "NowPlayingMessage") -> None:
         # Update widget state when a NowPlayingMessage is posted
         try:
-            self.title = message.title or self.title
-            self.source = message.source or self.source
-            self.state = message.state or self.state
+            # Only update title if message provides a non-empty value
+            if message.title:
+                self.title = message.title
+            # Update source if provided
+            if message.source:
+                self.source = message.source
+            # Update state if provided
+            if message.state:
+                self.state = message.state
             self.refresh()
-        except Exception:
-            pass
+        except Exception as e:
+            # Log error for debugging instead of silently failing
+            if os.getenv("PYTUIP_DEBUG"):
+                import traceback
+                print(f"[PYTUIP ERROR] on_now_playing_message failed: {e}")
+                traceback.print_exc()
     def _fmt_mmss(self, seconds: float | None) -> str:
         if not seconds or seconds <= 0:
             return "--:--"
         m, s = divmod(int(seconds), 60)
         return f"{m:02d}:{s:02d}"
 
-    def _marquee(self, width: int = 30) -> str:
+    def _marquee(self, width: int | None = None) -> str:
+        """Generate a scrolling marquee for long titles.
+        
+        If width is not provided, returns the full title without scrolling,
+        allowing the Textual rendering engine to handle width constraints.
+        """
         text = self.title or ""
+        if not text or text == "Nothing playing":
+            return text
+        
+        # If no width specified, return full text and let Textual handle overflow
+        if width is None:
+            return text
+        
+        # If text fits in width, return as-is
         if len(text) <= width:
             return text
+        
         # create a repeated buffer and slice according to offset
         buf = text + "   " + text
         start = self._offset % len(text)
@@ -63,9 +87,25 @@ class NowPlaying(Static):
             remaining = None
 
         countdown = self._fmt_mmss(remaining) if remaining is not None else "--:--"
-        marquee = self._marquee(36) or (self.title or "Nothing playing")
-        # single-line compact now playing with countdown and rolling title
-        return f"[b]Now Playing[/b]  [b]{countdown}[/b]  {marquee}  [dim]{self.source}[/dim]  {self.state}"
+        
+        # Display title with marquee effect
+        marquee = self._marquee() or self.title or "Nothing playing"
+        
+        # Build compact display: [countdown] Title | Source | State
+        # Format: "[-:--] Now Playing: Title | Source ▶"
+        parts = [f"[{countdown}]", "Now Playing:"]
+        
+        if self.title and self.title != "Nothing playing":
+            parts.append(marquee)
+        else:
+            parts.append("Nothing playing")
+        
+        if self.source:
+            parts.append(f"| {self.source}")
+        
+        parts.append(self.state)
+        
+        return " ".join(parts)
 
 
 class NowPlayingMessage(Message):
@@ -154,22 +194,30 @@ class MusicPlayerApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Footer()
-        # Top-left now playing + controls
-        with Horizontal():
-            with Vertical():
-                yield NowPlaying(id="now-playing")
-                with Horizontal(id="controls"):
-                    yield Button("Play", id="play")
-                    yield Button("Pause", id="pause")
-                    yield Button("Stop", id="stop")
-                yield ProgressBar(id="progress")
-            # Right-hand column: options and file/station lists
-            with Vertical():
+        # Full-width now playing display at top
+        yield NowPlaying(id="now-playing")
+        
+        # Playback controls
+        with Horizontal(id="controls"):
+            yield Button("▶ Play", id="play")
+            yield Button("⏸ Pause", id="pause")
+            yield Button("⏹ Stop", id="stop")
+        
+        # Progress bar
+        yield ProgressBar(id="progress")
+        
+        # Main content: mode selector and lists
+        with Horizontal(id="main-content"):
+            # Left sidebar: options
+            with Vertical(id="sidebar"):
                 yield RadioSet(
                     RadioButton("Radio", id="radio-option", value=True),
                     RadioButton("Local", id="local-option", value=False),
                     id="option-set"
                 )
+            
+            # Right content: lists
+            with Vertical(id="content"):
                 yield ListView(id="station-list")
                 yield DirectoryTree(str(Path.home()), id="directory-tree")
                 with ListView(id="local-list") as local_list:
@@ -522,18 +570,29 @@ class MusicPlayerApp(App):
         try:
             now = self.query_one(NowPlaying)
             # Post a message to the widget so it can update itself and
-            # participate in Textual's message lifecycle. Also set the
-            # fields directly for immediate effect.
+            # participate in Textual's message lifecycle.
+            # Use self.current_title (preserved state) as fallback when title is empty
+            msg_title = title if title else self.current_title
             try:
-                now.post_message(NowPlayingMessage(self, title or self.current_title, source, state))
-            except Exception:
-                # widget might not accept messages in some contexts; fall back
-                now.title = self.current_title
-                now.source = source
-                now.state = state
-        except Exception:
+                now.post_message(NowPlayingMessage(self, msg_title, source, state))
+            except Exception as e:
+                # widget might not accept messages in some contexts; fall back to direct assignment
+                # This ensures the widget gets updated even if post_message fails
+                if os.getenv("PYTUIP_DEBUG"):
+                    print(f"[PYTUIP ERROR] post_message failed: {e}")
+                try:
+                    now.title = msg_title
+                    now.source = source
+                    now.state = state
+                    now.refresh()
+                except Exception as e2:
+                    if os.getenv("PYTUIP_DEBUG"):
+                        print(f"[PYTUIP ERROR] direct assignment fallback also failed: {e2}")
+        except Exception as e:
             # If the widget isn't mounted (e.g. during tests or early startup),
-            # silently ignore — the internal `current_title` preserves state
+            # log and ignore — the internal `current_title` preserves state
+            if os.getenv("PYTUIP_DEBUG"):
+                print(f"[PYTUIP DEBUG] NowPlaying widget not mounted: {e}")
             return
 
     def _refresh_metadata(self):

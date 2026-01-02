@@ -1,5 +1,5 @@
 /* ===========================
-   App Background (Winamp classic)
+   Global / App Background
 =========================== */
 Screen {
     background: #0b0b0b;
@@ -12,17 +12,88 @@ Screen {
 Header {
     background: #111;
     color: #ffd24a;
-    height: 3;
-    padding: 1 2;
+    height: 1;
+    padding: 0 2;
     content-align: center middle;
 }
 
 Footer {
     background: #111;
     color: #bfb19a;
-    height: 2;
+    height: 1;
     padding: 0 2;
 } 
+
+/* ===========================
+   Now Playing Box - Full Width
+=========================== */
+#now-playing {
+    border: round #ff9e00;
+    padding: 1 2;
+    margin: 1;
+    background: #0b0b0b;
+    text-style: bold;
+    color: #ffd24a;
+    height: 4;
+    content-align: left middle;
+}
+
+/* ===========================
+   Control Buttons
+=========================== */
+#controls {
+    padding: 0 1;
+    margin: 0 1;
+    content-align: center middle;
+    height: 3;
+}
+
+#controls Button {
+    background: #ff9e00;
+    color: #0b0b0b;
+    border: round #ffd24a;
+    padding: 0 3;
+    margin: 0 1;
+    width: 12;
+}
+
+#controls Button:hover {
+    background: #ffb84d;
+}
+
+#controls Button:focus {
+    border: round #ffd24a;
+}
+
+/* ===========================
+   Progress Bar - Full Width
+=========================== */
+#progress {
+    padding: 0 2;
+    margin: 0 1;
+    color: #39ff14;
+    text-style: bold;
+    height: 2;
+}
+
+/* ===========================
+   Main Content Layout
+=========================== */
+#main-content {
+    height: 1fr;
+}
+
+#sidebar {
+    width: 20;
+    border: round #333;
+    padding: 1;
+    margin: 1;
+    background: #0f0f0f;
+}
+
+#content {
+    width: 1fr;
+}
 
 /* ===========================
    Lists: Stations / Local files
@@ -32,6 +103,7 @@ ListView {
     padding: 1;
     margin: 1;
     background: #151515;
+    height: 1fr;
 }
 
 ListItem {
@@ -43,7 +115,7 @@ ListItem.-selected {
     background: #ff9e00;
     color: #0b0b0b;
     text-style: bold;
-} 
+}
 
 /* ===========================
    Directory Tree
@@ -51,7 +123,9 @@ ListItem.-selected {
 DirectoryTree {
     border: round #333;
     padding: 1;
+    margin: 1;
     background: #0f0f0f;
+    height: 1fr;
 }
 
 /* ===========================
@@ -60,73 +134,19 @@ DirectoryTree {
 RadioSet {
     border: round #333;
     padding: 1;
-    margin: 1;
     background: #0f0f0f;
-} 
+    height: auto;
+}
+
+RadioButton {
+    color: #ffffff;
+}
 
 /* ===========================
    Labels
 =========================== */
 Label {
     color: #ffffff;
-}
-
-/* ===========================
-   Buttons
-=========================== */
-Button {
-    background: #ff9e00;
-    color: #0b0b0b;
-    padding: 0 2;
-    border: round #ffd24a;
-    margin: 0 1;
-}
-
-Button:hover {
-    background: #ffb84d;
-}
-
-Button:focus {
-    border: round #ffd24a;
-} 
-
-/* ==========================
-   Now Playing - Sleek / Winamp-like
-=========================== */
-#now-playing {
-    border: round #ff9e00;
-    padding: 1 2;
-    margin: 1;
-    background: #0b0b0b;
-    text-style: bold;
-    color: #ffd24a;
-    height: 3;
-    width: 40;
-    content-align: left middle;
-}  
-/* Controls below the now playing */
-#controls {
-    padding: 0 1;
-    margin: 0 1;
-    content-align: center middle;
-    height: 3;
-} 
-
-#controls Button {
-    background: #ff9e00;
-    color: #0b0b0b;
-    border: round #ffd24a;
-    padding: 0 3;
-    margin: 0 1;
-}
-#controls Button:hover { background: #ffb84d; } 
-/* ===========================
-   Progress Bar
-=========================== */
-#progress {
-    padding-left: 1;
-    color: #39ff14;
-    text-style: bold;
 }
 
 /* ===========================
