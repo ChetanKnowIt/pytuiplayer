@@ -88,23 +88,29 @@ python music_player.py
 
 *(TODO  screenshots of interface)*
 
-## Verification v0.1 ✅
+## Verification v0.1.010320250200 — incremental testing and updates ✅
 
 Use this quick checklist to manually verify the core behaviors of the TUI and to run the automated tests.
 
 - Run automated tests:
   - Command: `uv run pytest -q`
-  - Expected: **16 passed** (at the time of v0.1)
+  - Expected: **26 passed** (current test suite)
+
+Changes in this incremental update:
+- Added M3U playlist support with metadata and safe batched loading for large playlists.
+- Improved local title selection (Album - Title preferred) and deferred metadata resolution until playback.
+- Added message-based NowPlaying updates and tests to ensure marquee/progress reliability.
 
 - Manual UI checks (run from project root):
-  1. Start the app: `python src/test_main.py`
+  1. Start the app: `python src/test_main.py` (or your usual entry point)
   2. Verify **Radio** mode (default):
-     - Station list is visible, local list and directory tree are hidden.
+     - Station list is visible; local list and directory tree are hidden.
      - Select a station → `Now Playing` updates with station name.
      - While streaming (unknown duration), the progress area shows `Now: <metadata>` when available.
   3. Verify **Local** mode:
      - Switch to Local → local list and directory tree are visible; station list hidden.
      - Select an `.mp3` → `Now Playing` shows `Album - Title` if tags are present, otherwise filename.
+     - Loading large playlists may take time; the list mounts in batches to keep the UI responsive.
      - Progress bar shows `elapsed / total` when duration is known.
   4. Controls to try:
      - `space` — toggle Play/Pause
@@ -116,6 +122,8 @@ Use this quick checklist to manually verify the core behaviors of the TUI and to
   5. Exit: Press `q` to quit the app.
 
 - Troubleshooting:
+  - If `Now Playing` does not show a title persistently, run with debug tracing:
+    - Linux/macOS: `PYTUIP_DEBUG=1 python src/test_main.py` and reproduce; look for lines prefixed with `[PYTUIP DEBUG] update_now_playing called:`.
   - If radio metadata does not appear, ensure `mpv` supports ICY/media metadata for the stream and check the mpv logs printed to stdout.
   - If the UI looks off, edit `src/pytuiplayer/musicplayer_tui.css` and use `textual run --dev` style live edits where applicable.
 

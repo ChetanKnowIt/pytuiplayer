@@ -291,7 +291,7 @@ def test_play_local_calls_mpv_and_sets_title():
 
     assert mpv.last == str(p)
     assert app.currently_playing == "local"
-    assert app.current_title == p.name
+    assert app.current_title == p.stem
 
 
 def test_directory_tree_selection_plays_file_when_local():
@@ -313,3 +313,170 @@ def test_directory_tree_selection_plays_file_when_local():
     asyncio.run(app.on_directory_tree_file_selected(event))
 
     assert app.mpv.last == str(Path("/tmp/other.mp3"))
+
+
+def test_play_local_uses_mutagen_tags_if_available(monkeypatch):
+    app = MusicPlayerApp()
+
+    class FakeMPV:
+        def __init__(self):
+            self.last = None
+        def play(self, source):
+            self.last = source
+
+    app.mpv = FakeMPV()
+    app.update_now_playing = lambda *a, **k: None
+
+    # inject a fake mutagen.File that returns dict-like metadata
+    import sys, types
+    fake_mutagen = types.SimpleNamespace(File=lambda *a, **k: {"album": ["MyAlbum"], "title": ["MyTitle"]})
+    monkeypatch.setitem(sys.modules, 'mutagen', fake_mutagen)
+
+    p = Path("/tmp/tagged.mp3")
+    app.play_local(p)
+
+    assert app.current_title == "MyAlbum - MyTitle"
+
+
+def test_load_m3u_parses_and_populates(tmp_path):
+    # create a small m3u playlist with metadata and relative path
+    p = tmp_path / "playlist.m3u"
+    music1 = tmp_path / "song1.mp3"
+    music2 = tmp_path / "song2.mp3"
+    music1.write_text("")
+    music2.write_text("")
+
+    content = """#EXTM3U
+#EXTINF:123,Artist A - Title A
+song1.mp3
+song2.mp3
+"""
+    p.write_text(content)
+
+    app = MusicPlayerApp()
+
+    class FakeList:
+        def __init__(self):
+            self.items = []
+        def clear(self):
+            self.items.clear()
+        async def mount(self, item):
+            self.items.append(item)
+
+    fake = FakeList()
+    app.query_one = lambda *a, **k: fake
+
+    import asyncio
+    asyncio.run(app.load_m3u(p))
+
+    assert len(fake.items) == 2
+    # loader now stores a dict with source and meta without resolving paths
+    assert isinstance(getattr(fake.items[0], 'data'), dict)
+    assert getattr(fake.items[0], 'data')['source'].endswith('song1.mp3')
+    # our loader adds a `_meta_label` attribute to help testing/inspection
+    assert getattr(fake.items[0], '_meta_label') == 'Artist A - Title A'
+
+
+def test_load_large_m3u_is_truncated_and_batched(tmp_path, monkeypatch):
+    # Create a large playlist (3k entries)
+    p = tmp_path / "big.m3u"
+    n = 3000
+    with open(p, "w") as f:
+        f.write("#EXTM3U\n")
+        for i in range(n):
+            f.write(f"#EXTINF:123,Title {i}\n")
+            f.write(f"song{i}.mp3\n")
+
+    app = MusicPlayerApp()
+    # set a lower max to make the test deterministic
+    app.max_playlist_items = 1000
+    app.playlist_batch_size = 100
+
+    class FakeList:
+        def __init__(self):
+            self.items = []
+        def clear(self):
+            self.items.clear()
+        async def mount(self, item):
+            self.items.append(item)
+
+    fake = FakeList()
+    app.query_one = lambda *a, **k: fake
+
+    # track that we yield to event loop by monkeypatching asyncio.sleep
+    import asyncio
+    calls = {"sleep_called": 0}
+    async def fake_sleep(t):
+        calls["sleep_called"] += 1
+        # do not actually delay tests
+        return
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    asyncio.run(app.load_m3u(p))
+
+    # We expect truncation to max_playlist_items
+    assert len(fake.items) == 1000
+    # and we expect at least one batch yield to have occurred
+    assert calls["sleep_called"] >= 1
+
+
+def test_playlist_item_uses_extinf_metadata_on_play():
+    """Selecting a playlist item created by `load_m3u` should use the
+    playlist `#EXTINF` metadata as the displayed `current_title` when played.
+    """
+    import types, asyncio
+
+    app = MusicPlayerApp()
+
+    class FakeMPV:
+        def __init__(self):
+            self.last = None
+        def play(self, source):
+            self.last = source
+
+    app.mpv = FakeMPV()
+    app.update_now_playing = lambda *a, **k: None
+    app.option_mode = "local"
+
+    # Create a fake list item as load_m3u now produces: {source, meta}
+    from textual.widgets import ListItem, Label
+    item = ListItem(Label("song.mp3"))
+    item.data = {"source": "/tmp/song.mp3", "meta": "Artist X - Track Y"}
+
+    # Build a simple event object expected by on_list_view_selected
+    list_view = types.SimpleNamespace(id="local-list")
+    event = types.SimpleNamespace(list_view=list_view, item=item)
+
+    asyncio.run(app.on_list_view_selected(event))
+
+    assert app.mpv.last == "/tmp/song.mp3"
+    assert app.current_title == "Artist X - Track Y"
+
+
+def test_play_playlist_starts_first_item():
+    app = MusicPlayerApp()
+
+    class FakeMPV:
+        def __init__(self):
+            self.last = None
+        def play(self, source):
+            self.last = source
+
+    app.mpv = FakeMPV()
+    app.update_now_playing = lambda *a, **k: None
+
+    from textual.widgets import ListItem, Label
+    item = ListItem(Label("song.mp3"))
+    item.data = {"source": "/tmp/first.mp3", "meta": "First - Song"}
+
+    class FakeList:
+        def __init__(self, items):
+            self.items = items
+
+    fake = FakeList([item])
+    app.query_one = lambda *a, **k: fake
+
+    app.action_play_playlist()
+
+    assert app.mpv.last == "/tmp/first.mp3"
+    assert app.current_title == "First - Song"
