@@ -34,3 +34,15 @@ def test_stationplayer_update_stations_reads_file(tmp_path):
     # missing file keeps previous stations
     sp.update_stations(tmp_path / "does_not_exist.json")
     assert sp.stations[0]["name"] == "new"
+
+
+def test_update_stations_with_invalid_json_keeps_previous(tmp_path):
+    mpv = FakeMPV()
+    sp = StationPlayer(mpv, stations=[{"name": "old", "url": "u"}])
+
+    bad_file = tmp_path / "bad.json"
+    bad_file.write_text('not a valid json')
+
+    result = sp.update_stations(bad_file)
+    assert result is False
+    assert sp.stations[0]["name"] == "old"

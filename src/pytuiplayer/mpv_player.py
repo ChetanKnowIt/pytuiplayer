@@ -61,6 +61,31 @@ class MPVPlayer:
         except Exception:
             return
 
+    def seek_absolute(self, seconds: int):
+        """Seek to an absolute position in seconds."""
+        try:
+            # Try explicit API first
+            if hasattr(self.player, "seek"):
+                try:
+                    # some bindings support a mode parameter
+                    self.player.seek(seconds, "absolute")
+                    return
+                except TypeError:
+                    # older bindings may not accept a mode parameter
+                    pass
+            # Try setting time_pos property directly
+            if hasattr(self.player, "time_pos"):
+                try:
+                    self.player.time_pos = seconds
+                    return
+                except Exception:
+                    pass
+            # Fallback to command interface
+            if hasattr(self.player, "command"):
+                self.player.command("seek", seconds, "absolute")
+        except Exception:
+            return
+
     def get_time_pos(self):
         try:
             return getattr(self.player, "time_pos", None)

@@ -99,7 +99,17 @@ Button:focus {
     background: #262636;
     text-style: bold;
 }
-
+/* ==========================
+   Volume Indicator
+=========================== */
+#volume-indicator {
+    border: round #ff9e64;
+    padding: 0 1;
+    margin: 0 1;
+    background: #262636;
+    color: #ffdf00;
+    min-width: 10;
+}
 /* ===========================
    Progress Bar
 =========================== */
