@@ -88,6 +88,39 @@ python music_player.py
 
 *(TODO  screenshots of interface)*
 
+## Verification v0.1 ✅
+
+Use this quick checklist to manually verify the core behaviors of the TUI and to run the automated tests.
+
+- Run automated tests:
+  - Command: `uv run pytest -q`
+  - Expected: **16 passed** (at the time of v0.1)
+
+- Manual UI checks (run from project root):
+  1. Start the app: `python src/test_main.py`
+  2. Verify **Radio** mode (default):
+     - Station list is visible, local list and directory tree are hidden.
+     - Select a station → `Now Playing` updates with station name.
+     - While streaming (unknown duration), the progress area shows `Now: <metadata>` when available.
+  3. Verify **Local** mode:
+     - Switch to Local → local list and directory tree are visible; station list hidden.
+     - Select an `.mp3` → `Now Playing` shows `Album - Title` if tags are present, otherwise filename.
+     - Progress bar shows `elapsed / total` when duration is known.
+  4. Controls to try:
+     - `space` — toggle Play/Pause
+     - `p` — Play
+     - `k` — Pause
+     - `s` — Stop
+     - `h` / `l` — Seek -5s / +5s
+     - `1` / `5` / `9` — Seek to 10%/50%/90%
+  5. Exit: Press `q` to quit the app.
+
+- Troubleshooting:
+  - If radio metadata does not appear, ensure `mpv` supports ICY/media metadata for the stream and check the mpv logs printed to stdout.
+  - If the UI looks off, edit `src/pytuiplayer/musicplayer_tui.css` and use `textual run --dev` style live edits where applicable.
+
+This verification checklist represents v0.1 of manual verification for the project. Please update as features change.
+
 ---
 
 

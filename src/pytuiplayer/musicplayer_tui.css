@@ -1,36 +1,37 @@
 /* ===========================
-   App Background
+   App Background (Winamp classic)
 =========================== */
 Screen {
-    background: #1e1e2e;
-    color: #ffffff;
+    background: #0b0b0b;
+    color: #f0e6c8;
 }
 
 /* ===========================
    Header / Footer
 =========================== */
 Header {
-    background: #1e1e2e;
-    color: #ffffff;
+    background: #111;
+    color: #ffd24a;
     height: 3;
     padding: 1 2;
+    content-align: center middle;
 }
 
 Footer {
-    background: #1e1e2e;
-    color: #c0c0c0;
+    background: #111;
+    color: #bfb19a;
     height: 2;
     padding: 0 2;
-}
+} 
 
 /* ===========================
    Lists: Stations / Local files
 =========================== */
 ListView {
-    border: round #5f5fff;
+    border: round #ff9e00;
     padding: 1;
     margin: 1;
-    background: #2e2e3e;
+    background: #151515;
 }
 
 ListItem {
@@ -39,29 +40,29 @@ ListItem {
 }
 
 ListItem.-selected {
-    background: #5f5fff;
-    color: #ffffff;
+    background: #ff9e00;
+    color: #0b0b0b;
     text-style: bold;
-}
+} 
 
 /* ===========================
    Directory Tree
 =========================== */
 DirectoryTree {
-    border: round #444466;
+    border: round #333;
     padding: 1;
-    background: #262636;
+    background: #0f0f0f;
 }
 
 /* ===========================
    Radio Buttons
 =========================== */
 RadioSet {
-    border: round #444466;
+    border: round #333;
     padding: 1;
     margin: 1;
-    background: #262636;
-}
+    background: #0f0f0f;
+} 
 
 /* ===========================
    Labels
@@ -74,48 +75,58 @@ Label {
    Buttons
 =========================== */
 Button {
-    background: #5f5fff;
-    color: #ffffff;
+    background: #ff9e00;
+    color: #0b0b0b;
     padding: 0 2;
-    border: round #ffffff;
+    border: round #ffd24a;
     margin: 0 1;
 }
 
 Button:hover {
-    background: #7f7fff;
+    background: #ffb84d;
 }
 
 Button:focus {
-    border: round #ffdf00;
-}
+    border: round #ffd24a;
+} 
 
-/* ===========================
-   Now Playing Panel
+/* ==========================
+   Now Playing - Sleek / Winamp-like
 =========================== */
 #now-playing {
-    border: round #9ece6a;
-    padding: 1;
+    border: round #ff9e00;
+    padding: 1 2;
     margin: 1;
-    background: #262636;
+    background: #0b0b0b;
     text-style: bold;
-}
-/* ==========================
-   Volume Indicator
-=========================== */
-#volume-indicator {
-    border: round #ff9e64;
+    color: #ffd24a;
+    height: 3;
+    width: 40;
+    content-align: left middle;
+}  
+/* Controls below the now playing */
+#controls {
     padding: 0 1;
     margin: 0 1;
-    background: #262636;
-    color: #ffdf00;
-    min-width: 10;
+    content-align: center middle;
+    height: 3;
+} 
+
+#controls Button {
+    background: #ff9e00;
+    color: #0b0b0b;
+    border: round #ffd24a;
+    padding: 0 3;
+    margin: 0 1;
 }
+#controls Button:hover { background: #ffb84d; } 
 /* ===========================
    Progress Bar
 =========================== */
 #progress {
     padding-left: 1;
-    color: #9ece6a;
+    color: #39ff14;
+    text-style: bold;
 }
 
 /* ===========================

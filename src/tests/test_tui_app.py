@@ -1,4 +1,5 @@
 from pytuiplayer.tui_app import MusicPlayerApp
+from pathlib import Path
 
 
 class FakeMPVPlayer:
@@ -168,3 +169,147 @@ def test_volume_up_down_and_mute():
     assert app.muted is False
     assert app.volume == 50
     assert mpv.last == 50
+
+
+def test_explicit_play_and_pause():
+    app = MusicPlayerApp()
+    app.mpv = FakeMPVPlayer()
+    # avoid touching the textual DOM during unit tests
+    app.update_now_playing = lambda *a, **k: None
+
+    app.action_play()
+    assert app.mpv.calls[-1] == "unpause"
+
+    app.action_pause()
+    assert app.mpv.calls[-1] == "pause"
+
+
+def test_visibility_toggle_hides_unused_widgets():
+    import types, asyncio
+
+    app = MusicPlayerApp()
+    # fake widgets to capture display/visible/disabled changes
+    class W:
+        def __init__(self):
+            self.visible = None
+            self.display = None
+            self.disabled = None
+        def clear(self):
+            self.cleared = True
+        async def mount(self, item):
+            self.mounted = getattr(self, "mounted", [])
+            self.mounted.append(item)
+
+    station = W()
+    local = W()
+    tree = W()
+
+    from pytuiplayer.tui_app import NowPlaying
+    def query_one(sel, *a, **k):
+        if sel == "#station-list":
+            return station
+        if sel == "#local-list":
+            return local
+        if sel == "#directory-tree":
+            return tree
+        # provide a simple NowPlaying for update_now_playing calls
+        if sel == NowPlaying:
+            nw = NowPlaying()
+            return nw
+        raise KeyError(sel)
+
+    app.query_one = query_one
+
+    # simulate switching to local
+    event = types.SimpleNamespace(pressed=types.SimpleNamespace(id="local-option"))
+    asyncio.run(app.on_radio_set_changed(event))
+
+    assert local.visible is True or local.display is True
+    assert station.visible is False or station.display is False
+
+    # switch back to radio
+    event = types.SimpleNamespace(pressed=types.SimpleNamespace(id="radio-option"))
+    asyncio.run(app.on_radio_set_changed(event))
+
+    assert station.visible is True or station.display is True
+    assert local.visible is False or local.display is False
+
+
+def test_progressbar_shows_radio_meta_when_streaming():
+    from pytuiplayer.tui_app import ProgressBar, NowPlaying
+
+    app = MusicPlayerApp()
+    class FakePlayer:
+        def get_time_pos(self):
+            return None
+        def get_duration(self):
+            return None
+    app.mpv = FakePlayer()
+
+    # simulate radio playing
+    app.option_mode = "radio"
+    app.currently_playing = "radio"
+    app.current_title = "Artist - Track"
+
+    # fake query_one to return a ProgressBar instance
+    bar = None
+    def query_one(sel, *a, **k):
+        nonlocal bar
+        if sel == ProgressBar:
+            if bar is None:
+                bar = ProgressBar()
+            return bar
+        if sel == NowPlaying:
+            nw = NowPlaying()
+            return nw
+        raise KeyError(sel)
+
+    app.query_one = query_one
+
+    app.update_progress()
+
+    assert bar.meta == "Artist - Track"
+    assert "Artist - Track" in bar.render()
+
+
+def test_play_local_calls_mpv_and_sets_title():
+    app = MusicPlayerApp()
+
+    class FakeMPV:
+        def __init__(self):
+            self.last = None
+        def play(self, source):
+            self.last = source
+
+    mpv = FakeMPV()
+    app.mpv = mpv
+    # avoid touching the textual DOM in unit tests
+    app.update_now_playing = lambda *a, **k: None
+
+    p = Path("/tmp/song.mp3")
+    app.play_local(p)
+
+    assert mpv.last == str(p)
+    assert app.currently_playing == "local"
+    assert app.current_title == p.name
+
+
+def test_directory_tree_selection_plays_file_when_local():
+    import types, asyncio
+
+    app = MusicPlayerApp()
+
+    class FakeMPV:
+        def __init__(self):
+            self.last = None
+        def play(self, source):
+            self.last = source
+
+    app.mpv = FakeMPV()
+    app.option_mode = "local"
+    app.update_now_playing = lambda *a, **k: None
+
+    event = types.SimpleNamespace(path=str(Path("/tmp/other.mp3")))
+    asyncio.run(app.on_directory_tree_file_selected(event))
+
+    assert app.mpv.last == str(Path("/tmp/other.mp3"))

@@ -15,17 +15,51 @@ class NowPlaying(Static):
     title = reactive("Nothing playing")
     state = reactive("⏹")
     source = reactive("")
+    progress = reactive(0.0)
+    duration = reactive(0.0)
+    _offset = reactive(0)
+
+    def on_mount(self) -> None:
+        # tick every 0.6s to drive the marquee
+        self.set_interval(0.6, self._tick)
+
+    def _tick(self) -> None:
+        self._offset = (self._offset + 1) % max(1, len(self.title) + 1)
+        self.refresh()
+
+    def _fmt_mmss(self, seconds: float | None) -> str:
+        if not seconds or seconds <= 0:
+            return "--:--"
+        m, s = divmod(int(seconds), 60)
+        return f"{m:02d}:{s:02d}"
+
+    def _marquee(self, width: int = 30) -> str:
+        text = self.title or ""
+        if len(text) <= width:
+            return text
+        # create a repeated buffer and slice according to offset
+        buf = text + "   " + text
+        start = self._offset % len(text)
+        return buf[start:start + width]
 
     def render(self) -> str:
-        return (
-            "[b]Now Playing[/b]\n"
-            f"{self.state} {self.title}\n"
-            f"[dim]{self.source}[/dim]"
-        )
+        # countdown (remaining) to show at top-left
+        remaining = None
+        try:
+            if self.duration and self.duration > 0:
+                remaining = int(self.duration - (self.progress or 0))
+        except Exception:
+            remaining = None
+
+        countdown = self._fmt_mmss(remaining) if remaining is not None else "--:--"
+        marquee = self._marquee(36)
+        # single-line compact now playing with countdown and rolling title
+        return f"[b]Now Playing[/b]  [b]{countdown}[/b]  {marquee}  [dim]{self.source}[/dim]  {self.state}"
 
 class ProgressBar(Static):
     progress = reactive(0.0)
     duration = reactive(0.0)
+    meta = reactive("")
 
     def _fmt_mmss(self, seconds: float | None) -> str:
         if not seconds or seconds <= 0:
@@ -34,8 +68,11 @@ class ProgressBar(Static):
         return f"{m:02d}:{s:02d}"
 
     def render(self) -> str:
-        # Unknown duration -> show placeholder
+        # Unknown duration -> if we have radio metadata, show it on the progress area
         if not self.duration or self.duration <= 0:
+            if self.meta:
+                # compact display for metadata
+                return f"Now: {self.meta}"
             return "⏱ --:-- / --:--"
 
         # Compute progress bar proportionally and clamp between 0 and 1
@@ -53,21 +90,13 @@ class ProgressBar(Static):
         return f"[{bar}] {elapsed} / {total}"
 
 
-class VolumeIndicator(Static):
-    volume = reactive(50)
-    muted = reactive(False)
-
-    def render(self) -> str:
-        if self.muted:
-            return "[b]Vol:[/b] MUTED"
-        return f"[b]Vol:[/b] {self.volume}%"
-
-
 class MusicPlayerApp(App):
     CSS_PATH = "musicplayer_tui.css"
     BINDINGS = [
         Binding(key="q", action="quit", description="Quit the app"),
         Binding("space", "toggle_play", "Play/Pause"),
+        Binding("p", "play", description="Play"),
+        Binding("k", "pause", description="Pause"),
         Binding("s", "stop", "Stop"),
         Binding("h", "seek_backward", "Seek -5s"),
         Binding("l", "seek_forward", "Seek +5s"),
@@ -97,7 +126,16 @@ class MusicPlayerApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Footer()
+        # Top-left now playing + controls
         with Horizontal():
+            with Vertical():
+                yield NowPlaying(id="now-playing")
+                with Horizontal(id="controls"):
+                    yield Button("Play", id="play")
+                    yield Button("Pause", id="pause")
+                    yield Button("Stop", id="stop")
+                yield ProgressBar(id="progress")
+            # Right-hand column: options and file/station lists
             with Vertical():
                 yield RadioSet(
                     RadioButton("Radio", id="radio-option", value=True),
@@ -106,29 +144,57 @@ class MusicPlayerApp(App):
                 )
                 yield ListView(id="station-list")
                 yield DirectoryTree(str(Path.home()), id="directory-tree")
-            with ListView(id="local-list") as local_list:
-                local_list.border_title = "Local Music List"
-
-        with Horizontal():
-            yield Button("Play", id="play")
-            yield Button("Pause", id="pause")
-            yield Button("Stop", id="stop")
-            yield VolumeIndicator(id="volume-indicator")
-            yield NowPlaying(id="now-playing")
-            yield ProgressBar(id="progress")
+                with ListView(id="local-list") as local_list:
+                    local_list.border_title = "Local Music List"
 
 
 
     async def on_mount(self) -> None:
         self.title = "Music Player"
         await self.load_stations(self.stations_file)
-        # initialize player volume
+        # initialize player volume (we keep internal volume handling but hide UI controls)
         try:
             self.mpv.set_volume(self.volume)
         except Exception:
             pass
         self.update_volume_ui()
+        # progress update and metadata polling
         self.set_interval(0.5, self.update_progress)
+        self.set_interval(1.0, self._refresh_metadata)
+
+        # Ensure only the active list is visible at startup. Use both `display`
+        # (sends Hide/Show events) and `visible` for compatibility.
+        try:
+            station = self.query_one("#station-list")
+            local = self.query_one("#local-list")
+            tree = self.query_one("#directory-tree")
+            if self.option_mode == "radio":
+                try: station.display = True
+                except Exception: pass
+                station.visible = True
+                station.disabled = False
+
+                for w in (local, tree):
+                    try: w.display = False
+                    except Exception: pass
+                    w.visible = False
+                    w.disabled = True
+            else:
+                try: local.display = True
+                except Exception: pass
+                local.visible = True
+                local.disabled = False
+                try: tree.display = True
+                except Exception: pass
+                tree.visible = True
+                tree.disabled = False
+
+                try: station.display = False
+                except Exception: pass
+                station.visible = False
+                station.disabled = True
+        except Exception:
+            pass
 
     def update_volume_ui(self):
         try:
@@ -203,22 +269,62 @@ class MusicPlayerApp(App):
 
         self.option_mode = new_mode
 
-        self.query_one("#station-list").visible = radio
-        self.query_one("#local-list").visible = not radio
-        self.query_one("#station-list").disabled = not radio
-        self.query_one("#local-list").disabled = radio
+        # Use display/visible/disabled so Textual will emit Hide/Show events
+        try:
+            station = self.query_one("#station-list")
+            local = self.query_one("#local-list")
+            tree = self.query_one("#directory-tree")
+            if radio:
+                try: station.display = True
+                except Exception: pass
+                station.visible = True
+                station.disabled = False
+
+                for w in (local, tree):
+                    try: w.display = False
+                    except Exception: pass
+                    w.visible = False
+                    w.disabled = True
+            else:
+                for w in (local, tree):
+                    try: w.display = True
+                    except Exception: pass
+                    w.visible = True
+                    w.disabled = False
+
+                try: station.display = False
+                except Exception: pass
+                station.visible = False
+                station.disabled = True
+        except Exception:
+            # fallback to previous behavior if query fails
+            self.query_one("#station-list").visible = radio
+            self.query_one("#local-list").visible = not radio
+            self.query_one("#station-list").disabled = not radio
+            self.query_one("#local-list").disabled = radio
 
         if not radio:
             await self.load_local_files(Path.home())
 
 
     async def load_local_files(self, path: Path):
+        """Populate `#local-list` with local music files (case-insensitive).
+
+        We iterate `path.iterdir()` to support uppercase or mixed-case extensions
+        instead of relying on a single glob pattern.
+        """
         local_list = self.query_one("#local-list", ListView)
         local_list.clear()
-        for file in path.glob("*.mp3"):
-            item = ListItem(Label(file.name))
-            item.data = file
-            await local_list.mount(item)
+        for file in path.iterdir():
+            # simple case-insensitive suffix check
+            try:
+                if file.suffix.lower() == ".mp3":
+                    item = ListItem(Label(file.name))
+                    item.data = file
+                    await local_list.mount(item)
+            except Exception:
+                # ignore files we cannot stat or inspect
+                continue
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
@@ -259,7 +365,14 @@ class MusicPlayerApp(App):
             else:
                 self.update_now_playing("Failed to load stations", "", "⚠")
         elif self.option_mode == "local" and path.suffix.lower() == ".mp3":
-            self.currently_playing = "local"
+            # If a user clicks a file in the directory tree while in Local mode,
+            # play it immediately (expected behavior) rather than only setting a
+            # flag.
+            try:
+                self.play_local(path)
+            except Exception:
+                # Surface a basic notification on failure
+                self.update_now_playing("Failed to play file", "", "⚠")
 
     async def load_stations_ui(self):
         """Populate the `#station-list` ListView from the current `self.stations` data."""
@@ -276,6 +389,32 @@ class MusicPlayerApp(App):
         now.source = source
         now.state = state
 
+    def _refresh_metadata(self):
+        # Poll MPV for stream metadata (icy-title / media-title) when radio is playing
+        try:
+            if self.option_mode != "radio":
+                return
+            if getattr(self, "currently_playing", None) != "radio":
+                return
+            player = getattr(self.mpv, "player", None)
+            meta = None
+            if player is None:
+                return
+            # try property API
+            if hasattr(player, "get_property"):
+                try:
+                    meta = player.get_property("icy-title") or player.get_property("media-title")
+                except Exception:
+                    meta = None
+            # try attribute fallback
+            if not meta:
+                meta = getattr(player, "media_title", None) or getattr(player, "title", None)
+            if meta and meta != self.current_title:
+                self.current_title = meta
+                self.update_now_playing(meta, "Radio", "▶")
+        except Exception:
+            return
+
     def update_progress(self):
         try:
             pos = self.mpv.get_time_pos()
@@ -286,6 +425,22 @@ class MusicPlayerApp(App):
         bar = self.query_one(ProgressBar)
         bar.progress = pos or 0
         bar.duration = dur or 0
+        # show radio metadata on the progress area when duration unknown
+        try:
+            if getattr(self, "option_mode", "radio") == "radio" and getattr(self, "currently_playing", None) == "radio":
+                bar.meta = self.current_title or ""
+            else:
+                bar.meta = ""
+        except Exception:
+            pass
+
+        # also update now playing for countdown purposes
+        try:
+            now = self.query_one(NowPlaying)
+            now.progress = pos or 0
+            now.duration = dur or 0
+        except Exception:
+            pass
 
     def action_toggle_play(self):
         if self.mpv.is_paused():
@@ -298,6 +453,22 @@ class MusicPlayerApp(App):
             self.update_now_playing(
                 self.current_title, self.option_mode, "⏸"
             )
+
+    def action_play(self):
+        """Explicit play command (bound to 'p')."""
+        try:
+            self.mpv.unpause()
+        except Exception:
+            pass
+        self.update_now_playing(self.current_title, self.option_mode, "▶")
+
+    def action_pause(self):
+        """Explicit pause command (bound to 'k')."""
+        try:
+            self.mpv.pause()
+        except Exception:
+            pass
+        self.update_now_playing(self.current_title, self.option_mode, "⏸")
 
     def action_stop(self):
         self.mpv.stop()
@@ -344,6 +515,8 @@ class MusicPlayerApp(App):
 
     async def play_station(self, station, idx):
         self.stations.play(idx)
+        self.currently_playing = "radio"
+        # show station name until stream metadata arrives
         self.current_title = station["name"]
         self.update_now_playing(
             station["name"], "Radio", "▶"
@@ -354,11 +527,26 @@ class MusicPlayerApp(App):
 
     def play_local(self, path: Path):
         self.mpv.play(str(path))
-        self.current_title = path.name
         self.currently_playing = "local"
+        # try to fetch tags (optional dependency)
+        title = path.name
+        try:
+            from mutagen import File as MutagenFile
+            info = MutagenFile(str(path), easy=True)
+            album = None
+            track = None
+            if info:
+                album = info.get("album", [None])[0]
+                track = info.get("title", [None])[0]
+            if album or track:
+                title = f"{album or ''} - {track or path.stem}"
+        except Exception:
+            title = path.name
+
+        self.current_title = title
 
         self.update_now_playing(
-            path.name,
+            title,
             "Local File",
             "▶"
         )
