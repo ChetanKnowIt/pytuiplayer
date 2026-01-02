@@ -14,3 +14,11 @@ dist/
 __pycache__/
 *.pyc
 
+# Keys
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.gpg
+*.asc

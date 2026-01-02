@@ -1,4 +1,12 @@
 /* ===========================
+   App Background
+=========================== */
+Screen {
+    background: #1e1e2e;
+    color: #ffffff;
+}
+
+/* ===========================
    Header / Footer
 =========================== */
 Header {
@@ -30,10 +38,29 @@ ListItem {
     height: 1;
 }
 
-/* Highlight selected item */
-ListItem.--highlight {
+ListItem.-selected {
     background: #5f5fff;
     color: #ffffff;
+    text-style: bold;
+}
+
+/* ===========================
+   Directory Tree
+=========================== */
+DirectoryTree {
+    border: round #444466;
+    padding: 1;
+    background: #262636;
+}
+
+/* ===========================
+   Radio Buttons
+=========================== */
+RadioSet {
+    border: round #444466;
+    padding: 1;
+    margin: 1;
+    background: #262636;
 }
 
 /* ===========================
@@ -54,19 +81,36 @@ Button {
     margin: 0 1;
 }
 
-Button.--hover {
+Button:hover {
     background: #7f7fff;
-    color: #ffffff;
 }
 
-Button.--focus {
+Button:focus {
     border: round #ffdf00;
 }
 
 /* ===========================
-   General Layout
+   Now Playing Panel
 =========================== */
-View {
-    background: #1e1e2e;
+#now-playing {
+    border: round #9ece6a;
+    padding: 1;
+    margin: 1;
+    background: #262636;
+    text-style: bold;
 }
 
+/* ===========================
+   Progress Bar
+=========================== */
+#progress {
+    padding-left: 1;
+    color: #9ece6a;
+}
+
+/* ===========================
+   Disabled Widgets
+=========================== */
+Widget:disabled {
+    opacity: 0.4;
+}
