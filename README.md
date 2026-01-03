@@ -87,7 +87,7 @@ python music_player.py
 
 *(TODO  screenshots of interface)*
 
-## Verification v0.1.010320251400 — incremental testing and updates ✅
+## Verification v0.1.010320251500 — incremental testing and updates ✅
 
 Use this quick checklist to manually verify the core behaviors of the TUI and to run the automated tests.
 
@@ -99,6 +99,16 @@ Changes in this incremental update:
 - Added M3U playlist support with metadata and safe batched loading for large playlists.
 - Improved local title selection (Album - Title preferred) and deferred metadata resolution until playback.
 - Added message-based NowPlaying updates and tests to ensure marquee/progress reliability.
+- Added pyinstaller and tested as below
+
+```python
+uv run pyinstaller \
+  --onefile \
+  --name pytuiplayer \
+  --collect-all textual \
+  --collect-all mpv \
+  pytuiplayer/__main__.py
+```
 
 - Manual UI checks (run from project root):
   1. Start the app: `python src/test_main.py` (or your usual entry point)
