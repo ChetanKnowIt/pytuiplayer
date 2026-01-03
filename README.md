@@ -12,6 +12,7 @@
 * **Directory Navigation**: Navigate your file system to select music files or radio station JSON files.
 * **Playback Controls**: Play, pause, and stop music directly from the interface.
 * **Mode Switching**: Switch between Radio and Local music modes using radio buttons.
+* **Prompt Based Development**: Current development in speed up with various coding agents, ast_stub is used for efficient token generation
 
 ## Installation
 
