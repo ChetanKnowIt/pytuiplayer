@@ -1,5 +1,3 @@
----
-
 # MusicPlayer TUI
 
 **MusicPlayer TUI** is a terminal-based music player built with [Textual](https://textual.textualize.io/) and [mpv](https://mpv.io/) via the `pytuiplayer` library. It allows you to play both internet radio stations and local music files through an intuitive text-based user interface (TUI).
@@ -84,12 +82,12 @@ python music_player.py
 * [Textual](https://textual.textualize.io/)
 * [pytuiplayer](https://github.com/Flamm3o/pytuiplayer)
 * [mpv](https://mpv.io/)
-- [HQ Radio](https://github.com/Pulham/Internet-Radio-HQ-URL-playlists)
+* [HQ Radio](https://github.com/Pulham/Internet-Radio-HQ-URL-playlists)
 ## Screenshots
 
 *(TODO  screenshots of interface)*
 
-## Verification v0.1.010320250200 — incremental testing and updates ✅
+## Verification v0.1.010320251400 — incremental testing and updates ✅
 
 Use this quick checklist to manually verify the core behaviors of the TUI and to run the automated tests.
 
