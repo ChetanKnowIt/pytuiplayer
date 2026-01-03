@@ -46,17 +46,17 @@ Footer {
     margin: 1 1;
     content-align: center middle;
     height: 6;
+    background: #0b0b0b;
 }
 
 #controls Button {
-    background: #ff9e00;
     color: #0b0b0b;
-    border: round #ffd24a;
-    
+    border: round #ffd24a;    
 }
 
 #controls Button:hover {
     background: #ffb84d;
+    border: round #0b0b0b;
 }
 
 #controls Button:focus {
@@ -64,13 +64,23 @@ Footer {
 }
 
 #volume-indicator{
-    background: #ff9e00;
+    background: #0b0b0b;
     color: #0b0b0b;
     border: round #ffd24a;
-    padding: 0 0;
+    padding: 0 1;
     margin: 0 0;
     height: 3;
-    width: 15;
+    width: 25;
+    content-align: center middle;
+}
+
+#volume-indicator:hover {
+    background: #ffb84d;
+    border: round #0b0b0b;
+}
+
+#volume-indicator:focus {
+    border: round #ffd24a;
 }
 /* ===========================
    Progress Bar - Full Width

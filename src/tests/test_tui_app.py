@@ -1,3 +1,4 @@
+from pytest import MonkeyPatch
 from pytuiplayer.tui_app import MusicPlayerApp
 from pathlib import Path
 
@@ -83,7 +84,7 @@ def test_progressbar_unknown_duration():
     bar.progress = 0
     bar.duration = 0
 
-    assert bar.render() == "⏱ --:-- / --:--"
+    assert bar.render() == "⏱ Duration unknown"
 
 
 def test_progressbar_formats_mmss_and_shows_bar():
@@ -98,7 +99,7 @@ def test_progressbar_formats_mmss_and_shows_bar():
     assert s.startswith("[") and "]" in s
 
 
-def test_seek_to_percent_uses_absolute_if_available():
+def test_seek_to_percent_uses_absolute_if_available() -> None:
     class FakeMPVSeek:
         def __init__(self):
             self.last_abs = None
@@ -119,7 +120,7 @@ def test_seek_to_percent_uses_absolute_if_available():
     assert mpv.last_abs == 100
 
 
-def test_seek_to_percent_no_duration_is_noop():
+def test_seek_to_percent_no_duration_is_noop() -> None:
     class FakeMPVNoDur:
         def __init__(self):
             self.called = False
@@ -137,7 +138,7 @@ def test_seek_to_percent_no_duration_is_noop():
     assert not mpv.called
 
 
-def test_volume_up_down_and_mute():
+def test_volume_up_down_and_mute() -> None:
     class FakeMPVVol:
         def __init__(self):
             self.last = None
@@ -315,7 +316,7 @@ def test_directory_tree_selection_plays_file_when_local():
     assert app.mpv.last == str(Path("/tmp/other.mp3"))
 
 
-def test_play_local_uses_mutagen_tags_if_available(monkeypatch):
+def test_play_local_uses_mutagen_tags_if_available(monkeypatch: MonkeyPatch):
     app = MusicPlayerApp()
 
     class FakeMPV:
@@ -338,7 +339,7 @@ def test_play_local_uses_mutagen_tags_if_available(monkeypatch):
     assert app.current_title == "MyAlbum - MyTitle"
 
 
-def test_load_m3u_parses_and_populates(tmp_path):
+def test_load_m3u_parses_and_populates(tmp_path: Path):
     # create a small m3u playlist with metadata and relative path
     p = tmp_path / "playlist.m3u"
     music1 = tmp_path / "song1.mp3"
@@ -377,7 +378,7 @@ song2.mp3
     assert getattr(fake.items[0], '_meta_label') == 'Artist A - Title A'
 
 
-def test_load_large_m3u_is_truncated_and_batched(tmp_path, monkeypatch):
+def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: MonkeyPatch):
     # Create a large playlist (3k entries)
     p = tmp_path / "big.m3u"
     n = 3000

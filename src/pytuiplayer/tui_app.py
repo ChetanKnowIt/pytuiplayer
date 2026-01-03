@@ -144,12 +144,14 @@ class ProgressBar(Static):
             if self.meta:
                 # compact display for metadata
                 return f"Now: {self.meta}"
-            return "⏱ --:-- / --:--"
+            return "⏱ Duration unknown"
 
         # Compute progress bar proportionally and clamp between 0 and 1
         try:
             ratio = max(0.0, min(1.0, (self.progress or 0) / self.duration))
         except Exception:
+            ratio = 0.0
+        except ZeroDivisionError:
             ratio = 0.0
 
         filled = int(ratio * 160)
@@ -228,17 +230,20 @@ class MusicPlayerApp(App):
         # Main content: mode selector and lists
         with Horizontal(id="main-content"):
             # Left sidebar: options
-            with Vertical(id="sidebar"):
+            with Vertical(id="sidebar") as sidebar: 
                 yield RadioSet(
                     RadioButton("Radio", id="radio-option", value=True),
                     RadioButton("Local", id="local-option", value=False),
                     id="option-set"
                 )
+                sidebar.border_title = "Mode Selection"
             
             # Right content: lists
             with Vertical(id="content"):
-                yield ListView(id="station-list")
-                yield DirectoryTree(str(Path.home()), id="directory-tree")
+                with ListView(id="station-list") as station_list:
+                    station_list.border_title = "Radio Stations"    
+                with DirectoryTree(str(Path.home()), id="directory-tree") as dir_tree:
+                    dir_tree.border_title = "Music Browser"
                 with ListView(id="local-list") as local_list:
                     local_list.border_title = "Local Music List"
 
@@ -857,7 +862,7 @@ class MusicPlayerApp(App):
         except Exception:
             pass
 
-    def action_play_playlist(self):
+    def action_play_playlist(self) -> None:
         """Start playback from the first item in the local playlist, if any."""
         try:
             local_list = self.query_one("#local-list")
