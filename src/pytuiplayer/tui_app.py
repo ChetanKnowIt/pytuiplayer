@@ -440,6 +440,7 @@ class MusicPlayerApp(App):
           to avoid blocking the UI when playlists are large.
         - Respects `self.max_playlist_items` to avoid loading excessively large
           playlists by default.
+        - Add support to fetch song duration to local list
         """
         local_list = self.query_one("#local-list", ListView)
         local_list.clear()
