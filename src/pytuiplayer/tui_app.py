@@ -1,15 +1,96 @@
+import asyncio
+import json
+import os
+from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import Any
+
+# Optional – install with `pip install aiofiles`
+try:
+    import aiofiles
+except Exception:  # pragma: no cover
+    aiofiles = None   # fallback to sync reading (still faster than the original)
+    
+from anyio import open_file  # <- a coroutine
+from mutagen import File as MutagenFile
+from textual import work
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, DirectoryTree, RadioSet, RadioButton
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from pathlib import Path
-import os
-from pytuiplayer.mpv_player import MPVPlayer
-from pytuiplayer.station_player import StationPlayer
-import json
-from textual.widgets import Static
 from textual.message import Message
 from textual.reactive import reactive
+from textual.widgets import (
+    Button,
+    DirectoryTree,
+    Footer,
+    Header,
+    Label,
+    ListItem,
+    ListView,
+    RadioButton,
+    RadioSet,
+    Static,
+)
+from textual.worker import get_current_worker
+
+from pytuiplayer.mpv_player import MPVPlayer
+from pytuiplayer.station_player import StationPlayer
+
+
+#### HELPER METHODS #### 
+@work(thread=True, exclusive=True)
+def fetch_duration(self, file_path: Path):
+    """Fetch the duration of a local MP3 without blocking the UI."""
+    worker = get_current_worker()
+    try:
+        audio = MutagenFile(file_path)
+        duration = int(audio.info.length) if audio and audio.info else None
+    except Exception:
+        duration = None
+
+    # Safely update the UI from the thread
+    if not worker.is_cancelled:
+        item = self.local_items.get(file_path)
+        if item:
+            item.data["duration"] = duration
+            label = f"{item.data['title']:<40} {self.fmt_mmss(duration)}"
+            self.call_from_thread(item.query_one(Label).update, label)
+
+# ----------------------------------------------------------------------
+# Helper utilities (unchanged from your original code, just moved out)
+# ----------------------------------------------------------------------
+def _parse_extinf(line: str) -> tuple[int | None, str | None]:
+    """
+    Parse a line that starts with #EXTINF.
+    Returns (duration_seconds|None, title|None)
+    """
+    try:
+        # "#EXTINF:213,Song Title"
+        _, rest = line.split(":", 1)
+        dur_part, title_part = rest.split(",", 1)
+        dur = int(dur_part.strip())
+        if dur < 0:
+            dur = None
+        return dur, title_part.strip()
+    except Exception:
+        return None, None
+
+
+def _resolve_source(base: Path, raw: str) -> str:
+    """
+    Resolve a raw playlist entry to a string that can be used later.
+    URLs are returned unchanged, local paths are made absolute (but
+    we keep them as strings to avoid creating Path objects later).
+    """
+    if raw.startswith(("http://", "https://", "rtmp://", "ftp://")):
+        return raw
+
+    cand = Path(raw)
+    if cand.is_absolute():
+        return str(cand)
+    # Relative – join with the playlist folder now, but keep as string.
+    return str(base / cand)
+
 
 class NowPlaying(Static):
     title = reactive("Nothing playing")
@@ -209,6 +290,8 @@ class MusicPlayerApp(App):
         # Playlist loading controls (can be overridden in tests or by callers)
         self.max_playlist_items = self.MAX_PLAYLIST_ITEMS
         self.playlist_batch_size = 200
+        self.max_playlist_items = 5000          # or None for “no limit”
+        self.fetch_duration = False             # set True if you want eager loading
 
 
     def compose(self) -> ComposeResult:
@@ -269,28 +352,38 @@ class MusicPlayerApp(App):
             local = self.query_one("#local-list")
             tree = self.query_one("#directory-tree")
             if self.option_mode == "radio":
-                try: station.display = True
-                except Exception: pass
+                try: 
+                    station.display = True
+                except Exception: 
+                    pass
                 station.visible = True
                 station.disabled = False
 
                 for w in (local, tree):
-                    try: w.display = False
-                    except Exception: pass
+                    try: 
+                        w.display = False
+                    except Exception: 
+                        pass
                     w.visible = False
                     w.disabled = True
             else:
-                try: local.display = True
-                except Exception: pass
+                try: 
+                    local.display = True
+                except Exception: 
+                    pass
                 local.visible = True
                 local.disabled = False
-                try: tree.display = True
-                except Exception: pass
+                try: 
+                    tree.display = True
+                except Exception: 
+                    pass
                 tree.visible = True
                 tree.disabled = False
 
-                try: station.display = False
-                except Exception: pass
+                try: 
+                    station.display = False
+                except Exception: 
+                    pass
                 station.visible = False
                 station.disabled = True
         except Exception:
@@ -348,20 +441,24 @@ class MusicPlayerApp(App):
                 pass
         self.update_volume_ui()
 
-
-    async def load_stations(self, path: Path):
-        try:
-            with open(path, "r") as f:
-                self.stations = StationPlayer(self.mpv, stations=json.load(f))
-        except FileNotFoundError:
-            default_file = Path(__file__).parent / "stations.json"
-            self.stations = StationPlayer(self.mpv, stations=json.load(default_file))
-        station_list = self.query_one("#station-list", ListView)
-        station_list.clear()
-        for idx, station in enumerate(self.stations.stations):
-            item = ListItem(Label(f"{idx}: {station['name']}"))
-            item.data = station
-            await station_list.mount(item)
+    def fmt_mmss(self, seconds: float | None) -> str:
+        if not seconds or seconds <= 0:
+            return "--:--"
+        m, s = divmod(int(seconds), 60)
+        return f"{m:02d}:{s:02d}"
+    
+    # async def load_stations(self, path: Path):
+    #     try:
+    #         self.stations = StationPlayer(self.mpv, stations=self._load_json(path))
+    #     except FileNotFoundError:
+    #         default_file = Path(__file__).parent / "stations.json"
+    #         self.stations = StationPlayer(self.mpv, stations=json.load(default_file))
+    #     station_list = self.query_one("#station-list", ListView)
+    #     station_list.clear()
+    #     for idx, station in enumerate(self.stations.stations):
+    #         item = ListItem(Label(f"{idx}: {station['name']}"))
+    #         item.data = station
+    #         await station_list.mount(item)
 
     async def on_radio_set_changed(self, event):
         radio = event.pressed.id == "radio-option"
@@ -380,25 +477,33 @@ class MusicPlayerApp(App):
             local = self.query_one("#local-list")
             tree = self.query_one("#directory-tree")
             if radio:
-                try: station.display = True
-                except Exception: pass
+                try: 
+                    station.display = True
+                except Exception: 
+                    pass
                 station.visible = True
                 station.disabled = False
 
                 for w in (local, tree):
-                    try: w.display = False
-                    except Exception: pass
+                    try: 
+                        w.display = False
+                    except Exception: 
+                        pass
                     w.visible = False
                     w.disabled = True
             else:
                 for w in (local, tree):
-                    try: w.display = True
-                    except Exception: pass
+                    try: 
+                        w.display = True
+                    except Exception: 
+                        pass
                     w.visible = True
                     w.disabled = False
 
-                try: station.display = False
-                except Exception: pass
+                try: 
+                    station.display = False
+                except Exception: 
+                    pass
                 station.visible = False
                 station.disabled = True
         except Exception:
@@ -413,101 +518,182 @@ class MusicPlayerApp(App):
 
 
     async def load_local_files(self, path: Path):
-        """Populate `#local-list` with local music files (case-insensitive).
-
-        We iterate `path.iterdir()` to support uppercase or mixed-case extensions
-        instead of relying on a single glob pattern.
-        """
         local_list = self.query_one("#local-list", ListView)
+        local_list.index = None        # 🔑 prevent index tracking
         local_list.clear()
+        self.local_items = {}  # keep a mapping for easy update
+
         for file in path.iterdir():
-            # simple case-insensitive suffix check
-            try:
-                if file.suffix.lower() == ".mp3":
-                    item = ListItem(Label(file.name))
-                    item.data = file
-                    await local_list.mount(item)
-            except Exception:
-                # ignore files we cannot stat or inspect
+            if file.suffix.lower() != ".mp3":
                 continue
 
-    async def load_m3u(self, path: Path):
-        """Load a local M3U playlist into `#local-list` in batches.
+            item = ListItem(Label(f"{file.name:<40} --:--"))
+            item.data = {"source": file, "title": file.name, "duration": None}
+            await local_list.mount(item)
+            self.local_items[file] = item
 
-        - Supports `#EXTINF` metadata lines and resolves relative paths against
-          the playlist file location.
-        - Mounts items in batches and yields to the event loop between batches
-          to avoid blocking the UI when playlists are large.
-        - Respects `self.max_playlist_items` to avoid loading excessively large
-          playlists by default.
-        - Add support to fetch song duration to local list
+            # Fire-and-forget: fetch duration in background
+            self.fetch_duration(file)
+
+
+
+    
+    # ----------------------------------------------------------------------
+    # The fast async loader
+    # ----------------------------------------------------------------------
+    async def load_m3u(self, path: Path):
         """
-        local_list = self.query_one("#local-list", ListView)
+        Load a local M3U playlist into ``#local-list`` in batches.
+
+        * Supports ``#EXTINF`` metadata lines and resolves relative paths.
+        * Yields to the event‑loop between batches so the UI stays responsive.
+        * Honors ``self.max_playlist_items``.
+        * (Optional) fetches song duration lazily – see ``self.fetch_duration``.
+        """
+        # ------------------------------------------------------------------
+        # 1️⃣  Grab the ListView once – no repeated query_one calls.
+        # ------------------------------------------------------------------
+        local_list: ListView = self.query_one("#local-list", ListView)
         local_list.clear()
 
-        base = path.parent
-        try:
-            with open(path, "r", encoding="utf-8", errors="replace") as f:
-                # read lines into memory (OK for typical playlists); we need the
-                # data available after file context closes
-                lines = [l.strip() for l in f if l.strip()]
-        except Exception:
-            return
+        base_dir = path.parent
+        max_items = self.max_playlist_items or float("inf")
+        batch_size = getattr(self, "playlist_batch_size", 200)  # sensible default
 
-        entries = []  # collect tuples of (source, label) where source may be URL or string path
-        metadata_next = None
-        for line in lines:
+        # ------------------------------------------------------------------
+        # 2️⃣  Choose the file‑reading strategy.
+        # ------------------------------------------------------------------
+        async def line_generator() -> AsyncIterator[str]:
+            """Yield stripped, non‑empty lines from the file."""
+            if aiofiles:                                   # async path
+                async with aiofiles.open(path, mode="r", encoding="utf-8",
+                                        errors="replace") as f:
+                    async for raw in f:
+                        line = raw.strip()
+                        if line:
+                            yield line
+            else:                                          # sync fallback (still fast)
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    for raw in f:
+                        line = raw.strip()
+                        if line:
+                            yield line
+
+        # ------------------------------------------------------------------
+        # 3️⃣  Main parsing loop – we build *only* the data needed for mounting.
+        # ------------------------------------------------------------------
+        batch: list = []
+        pending_meta: str | None = None
+        pending_dur: int | None = None
+        count = 0
+
+        async for line in line_generator():
+            # --------------------------------------------------------------
+            #   #EXTINF – store metadata for the *next* entry
+            # --------------------------------------------------------------
             if line.startswith("#EXTINF"):
-                parts = line.split(",", 1)
-                metadata_next = parts[1].strip() if len(parts) > 1 else None
+                pending_dur, pending_meta = _parse_extinf(line)
                 continue
+
+            # --------------------------------------------------------------
+            #   Skip any other comment line
+            # --------------------------------------------------------------
             if line.startswith("#"):
                 continue
-            # Determine whether this is a URL or a local file path. Avoid
-            # resolving local paths at load time to prevent unnecessary IO.
-            if line.startswith(("http://", "https://", "rtmp://", "ftp://")):
-                source = line
-            else:
-                candidate = Path(line)
-                if candidate.is_absolute():
-                    source = str(candidate)
-                else:
-                    # keep a relative/combined path string; resolution is deferred
-                    source = str(base / candidate)
 
-            label = metadata_next or Path(source).name
-            metadata_next = None
-            entries.append((source, label))
+            # --------------------------------------------------------------
+            #   Resolve the source (URL or absolute path)
+            # --------------------------------------------------------------
+            source = _resolve_source(base_dir, line)
 
-            # enforce a hard limit if configured
-            if self.max_playlist_items and len(entries) >= self.max_playlist_items:
-                break
+            # --------------------------------------------------------------
+            #   Build the label that will be shown in the UI.
+            #   We keep the duration as an int for later formatting.
+            # --------------------------------------------------------------
+            label = pending_meta or Path(source).name
+            duration = pending_dur
 
-        # Mount in batches and yield to the event loop between batches
-        import asyncio
-        batch = []
-        count = 0
-        for candidate, label in entries:
-            item = ListItem(Label(label))
-            # store both the original source (string or url) and the parsed
-            # metadata label so the play handler can resolve/verify only when
-            # the user actually requests playback.
-            item.data = {"source": candidate, "meta": label}
-            try:
-                item._meta_label = label
-            except Exception:
-                pass
+            # Reset the pending values for the next entry
+            pending_meta = None
+            pending_dur = None
+
+            # --------------------------------------------------------------
+            #   Create the ListItem *once* and stash the raw data.
+            # --------------------------------------------------------------
+            #   fmt_mmss is cheap, but we call it only once per item.
+            # --------------------------------------------------------------
+            duration_str = self.fmt_mmss(duration) if duration is not None else ""
+            display = f"{label:<40} {duration_str}"
+            item = ListItem(Label(display))
+            item.data = {
+                "source": source,
+                "meta": label,
+                "duration": duration,
+            }
+
             batch.append(item)
             count += 1
-            if len(batch) >= self.playlist_batch_size:
-                for it in batch:
-                    await local_list.mount(it)
-                batch = []
-                # yield control so UI remains responsive
-                await asyncio.sleep(0)
-        # mount any remaining items
-        for it in batch:
-            await local_list.mount(it)
+
+            # --------------------------------------------------------------
+            #   Respect the hard limit early – stop reading the file.
+            # --------------------------------------------------------------
+            if count >= max_items:
+                break
+
+            # --------------------------------------------------------------
+            #   When the batch is full, mount it and give the loop a breather.
+            # --------------------------------------------------------------
+            if len(batch) >= batch_size:
+                await local_list.mount(*batch)
+                batch.clear()
+                # Yield control – UI stays fluid.
+                if count % 500 == 0:
+                    await asyncio.sleep(0)
+
+
+        # ------------------------------------------------------------------
+        # 4️⃣  Mount any leftovers (the final, possibly incomplete batch)
+        # ------------------------------------------------------------------
+        await local_list.mount(*batch)
+
+        # ------------------------------------------------------------------
+        # 5️⃣  (Optional) eager duration fetching – only enable if you really
+        #     want it at load time.  The default is *lazy* (i.e. we keep the
+        #     integer we parsed from EXTINF, otherwise we leave it None).
+        # ------------------------------------------------------------------
+        if getattr(self, "fetch_duration", False):
+            # This runs in the background after the UI is already populated.
+            asyncio.create_task(self._populate_missing_durations(local_list))
+
+    # ----------------------------------------------------------------------
+    # 6️⃣  Helper to lazily fill missing durations (run in background)
+    # ----------------------------------------------------------------------
+    async def _populate_missing_durations(self, list_view: ListView):
+        """
+        Walk the already‑mounted items and, for any that have ``duration is None``,
+        read the file tags (e.g. via ``mutagen``) to fill the value.  This is
+        deliberately *async* so it never blocks the UI.
+        """
+        from mutagen import File as MutagenFile  # heavy import – only needed here
+
+        for item in list_view.children:               # ListItem objects
+            if item.data.get("duration") is None:
+                src = item.data["source"]
+                # Only attempt local files – skip URLs.
+                if src.startswith(("http://", "https://", "rtmp://", "ftp://")):
+                    continue
+                try:
+                    audio = await asyncio.to_thread(MutagenFile, src, easy=True)
+                    dur = int(audio.info.length) if audio and audio.info else None
+                    if dur is not None:
+                        item.data["duration"] = dur
+                        # Update the visible label in‑place
+                        label = item.query_one(Label)
+                        label.text = f"{item.data['meta']:<40} {self.fmt_mmss(dur)}"
+                except Exception:
+                    # Silently ignore – we just keep the placeholder.
+                    pass
+
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
@@ -540,43 +726,133 @@ class MusicPlayerApp(App):
                 else:
                     self.play_local(file_path)
 
-    async def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
-        path = Path(event.path)
-        if self.option_mode == "radio" and path.suffix.lower() == ".json":
-            # Try updating stations from the selected file. If successful, refresh the
-            # station list UI; otherwise surface a simple notification in the
-            # NowPlaying widget.
-            success = self.stations.update_stations(path)
-            if success:
-                await self.load_stations_ui()
-                self.update_now_playing(f"Loaded stations from {path.name}", "", "⏺")
-            else:
-                self.update_now_playing("Failed to load stations", "", "⚠")
-        elif self.option_mode == "local" and path.suffix.lower() == ".mp3":
-            # If a user clicks a file in the directory tree while in Local mode,
-            # play it immediately (expected behavior) rather than only setting a
-            # flag.
-            try:
-                self.play_local(path)
-            except Exception:
-                # Surface a basic notification on failure
-                self.update_now_playing("Failed to play file", "", "⚠")
-        elif self.option_mode == "local" and path.suffix.lower() == ".m3u":
-            # Load an M3U playlist into the local list
-            try:
-                await self.load_m3u(path)
-                self.update_now_playing(f"Loaded playlist {path.name}", "", "⏺")
-            except Exception:
-                self.update_now_playing("Failed to load playlist", "", "⚠")
+    import asyncio
+    from pathlib import Path
 
-    async def load_stations_ui(self):
-        """Populate the `#station-list` ListView from the current `self.stations` data."""
+    from textual.widgets import DirectoryTree
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 1️⃣  Small helpers – keep them inside the class or in a utils module
+    # ──────────────────────────────────────────────────────────────────────
+    ICON_OK = "⏺"
+    ICON_ERR = "⚠"
+
+
+    def _toast(self, msg: str, extra: str = "", icon: str = ICON_ERR) -> None:
+        """Convenient wrapper around `update_now_playing`."""
+        self.update_now_playing(msg, extra, icon)
+
+
+    async def _maybe_run_in_thread(self, func, *args, **kwargs):
+        """
+        Run a *synchronous* function in a thread and return its result.
+        If the function is already async we just await it.
+        """
+        if asyncio.iscoroutinefunction(func):
+            return await func(*args, **kwargs)
+        return await asyncio.to_thread(func, *args, **kwargs)
+
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 2️⃣  The actual event handler (clean, async‑friendly, easy to test)
+    # ──────────────────────────────────────────────────────────────────────
+    async def on_directory_tree_file_selected(
+        self,
+        event: DirectoryTree.FileSelected,
+    ) -> None:
+        """
+        React to a file click in the DirectoryTree.
+
+        * `radio` mode → JSON station file → refresh UI.
+        * `local` mode → MP3 file → play immediately.
+        * `local` mode → M3U playlist → load into the local list.
+        """
+        path = Path(event.path)
+        ext = path.suffix.lower()          # normalise once
+
+        try:
+            # --------------------------------------------------------------
+            # RADIO MODE – JSON stations file
+            # --------------------------------------------------------------
+            if self.option_mode == "radio" and ext == ".json":
+                # `update_stations` may be heavy (file‑IO + JSON parsing);
+                # run it in a thread to keep the UI responsive.
+                success = await self._maybe_run_in_thread(
+                    self.stations.update_stations, path
+                )
+                if success:
+                    await self.load_stations_ui()
+                    self.notify(f"✅ Loaded stations from {path.name} stations")
+                else:
+                    self.notify("❌  Failed to load stations ", severity="error")
+                return   # ← nothing else to do for this file
+
+            # --------------------------------------------------------------
+            # LOCAL MODE – MP3 file (play immediately)
+            # --------------------------------------------------------------
+            if self.option_mode == "local" and ext == ".mp3":
+                await self._maybe_run_in_thread(self.play_local, path)
+                self.notify(f"✅Playing {path.name}")
+                return
+
+            # --------------------------------------------------------------
+            # LOCAL MODE – M3U playlist
+            # --------------------------------------------------------------
+            if self.option_mode == "local" and ext == ".m3u":
+                await self.load_m3u(path)          # already async & fast
+                self.notify(f"✅Loaded playlist {path.name}")
+                return
+
+            # --------------------------------------------------------------
+            # FALLBACK – file type we don’t understand
+            # --------------------------------------------------------------
+            self.notify(f"❌ Ignored {path.name} (unsupported type)", severity="error")
+
+        except Exception as exc:                     # catch *any* unexpected error
+            # Log the traceback for developers (optional)
+            import traceback
+            traceback.print_exc()
+            # Show a user‑friendly message
+            self.notify(f"❌ Error: {type(exc).__name__}", severity="error")
+
+    async def load_stations(self, path: Path) -> None:
+        """
+        Load the stations JSON file, build a ``StationPlayer`` and populate the
+        ListView widget.
+        """
+        # --------------------------------------------------------------
+        # 1️⃣  Read the JSON file *asynchronously*.
+        # --------------------------------------------------------------
+        try:
+            stations_data = await self._load_json(path)          # <-- await!
+        except FileNotFoundError:
+            # Show a friendly message and abort the loading step.
+            self.notify(f"⚠️  Stations file not found: {path}", severity="error")
+            return
+        except json.JSONDecodeError as exc:
+            self.notify(f"❌  Invalid JSON in stations file: {exc}", severity="error")
+            return
+
+        # --------------------------------------------------------------
+        # 2️⃣  Build the StationPlayer (or whatever wrapper you use).
+        # --------------------------------------------------------------
+        # Assuming ``StationPlayer`` expects a *list* of station dicts.
+        self.stations = StationPlayer(self.mpv, stations=stations_data)
+
+        # --------------------------------------------------------------
+        # 3️⃣  Populate the ListView UI.
+        # --------------------------------------------------------------
         station_list = self.query_one("#station-list", ListView)
         station_list.clear()
+
         for idx, station in enumerate(self.stations.stations):
+            # ``station`` is a dict like {"name": "...", "url": "..."}
             item = ListItem(Label(f"{idx}: {station['name']}"))
-            item.data = station
-            await station_list.mount(item)
+            item.data = station                     # store the raw dict for later use
+            await station_list.mount(item)          # mount is async → await it
+
+        # (optional) give the user some feedback
+        self.notify(f"✅ Loaded {len(self.stations.stations)} stations")
             
     def update_now_playing(self, title: str, source: str, state: str):
         # Keep internal state even if the NowPlaying widget is not available.
@@ -646,6 +922,13 @@ class MusicPlayerApp(App):
         except Exception:
             return
 
+    async def _load_json(self, path: Path) -> Any:          # return whatever json.loads gives
+        # 1️⃣  Await the coroutine that creates the async file object
+        async with await open_file(path, mode="r", encoding="utf-8") as f:
+            # 2️⃣  Read the whole file (still async) and decode JSON
+            text = await f.read()
+            return json.loads(text)
+
     def update_progress(self):
         try:
             pos = self.mpv.get_time_pos()
@@ -658,10 +941,14 @@ class MusicPlayerApp(App):
         bar.duration = dur or 0
         # show radio metadata on the progress area when duration unknown
         try:
-            if getattr(self, "option_mode", "radio") == "radio" and getattr(self, "currently_playing", None) == "radio":
+            if (
+                getattr(self, "option_mode", "radio") == "radio"
+                and getattr(self, "currently_playing", None) == "radio"
+            ):
                 bar.meta = self.current_title or ""
             else:
                 bar.meta = ""
+
         except Exception:
             pass
 
