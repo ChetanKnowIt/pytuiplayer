@@ -204,3 +204,16 @@
 ### Scripts / manual demos (not part of the pytest suite)
 - `scripts/run_radio_demo.py` — headless launch + start a radio stream (live network).
 - `scripts/run_tui_app_demo.py` — headless launch; asserts the TUI mounts, loads stations, and renders the Now Playing widget (no playback).
+
+---
+
+## Workflow / Branching Policy
+
+Every feature (and every non-trivial change) is developed on its **own independent branch** and must satisfy the quality gate below before it can be merged to `main`.
+
+- **Branch per feature:** create a dedicated branch for each feature/bugfix (e.g. `feature/NN-short-slug`). Do not pile unrelated work onto one long-lived branch.
+- **Tests are the merge gate:** a branch may only move to `main` after `uv run pytest -q` passes — **all tests green, no skips expected on a working machine** (the `network`-marked radio test is allowed to skip only when offline).
+- **Lint gate:** `uv run ruff check .` must pass with no errors before merge.
+- **One feature = one branch = one reviewable change.** Keep branches focused; split large efforts into smaller, independently-mergeable branches where possible.
+- **No merge to `main` with failing tests or lint.** If a test must change, the change and its rationale travel together in the same branch.
+- **Document as you go:** update `ROADMAP.md` (mark items Done / add backlog) and `docs/AI_TASK_STATE.md` within the branch so the merge carries its own status.
