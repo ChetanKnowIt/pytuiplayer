@@ -10,7 +10,7 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 
 | File | Role |
 |------|------|
-| `src/pytuiplayer/tui_app.py` | Main App + all widgets + business logic (1236-line monolith) |
+| `src/pytuiplayer/tui_app.py` | Main App + all widgets + business logic (single-file monolith) |
 | `src/pytuiplayer/mpv_player.py` | Thin wrapper around `python-mpv` |
 | `src/pytuiplayer/station_player.py` | Station list manager |
 | `src/pytuiplayer/stations.json` | Default radio stations |
@@ -19,7 +19,11 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/pytuiplayer/profiling.py` | Performance profiling decorators (@profile, @profile_async) |
 | `src/pytuiplayer/__main__.py` | CLI entrypoint |
 | `src/tests/` | Pytest test suite |
+| `src/tests/testsuite_db.py` | SQLite test-inventory DB helpers (schema + idempotent upserts) |
+| `src/tests/test_backlog_coverage.py` | ROADMAP Test Backlog coverage (22 tests) |
 | `scripts/` | Dev scripts and manual test scripts |
+| `scripts/update_testsuite_db.py` | Rebuild/enrich `testsuite.db` (files + backlog mirror) |
+| `scripts/report_testsuite_db.py` | Print the test inventory / backlog / runs |
 | `pytuiplayer.spec` | PyInstaller build spec |
 
 ## Architecture
@@ -32,9 +36,9 @@ Single `MusicPlayerApp(App)` class in `tui_app.py`. No Screen abstraction — mo
 
 | Widget | Type | Location |
 |--------|------|----------|
-| `NowPlaying(Static)` | Reactive | `tui_app.py:99` |
-| `ProgressBar(Static)` | Reactive | `tui_app.py:218` |
-| `VolumeIndicator(Static)` | Reactive | `tui_app.py:255` |
+| `NowPlaying(Static)` | Reactive | `tui_app.py:82` |
+| `ProgressBar(Static)` | Reactive | `tui_app.py:200` |
+| `VolumeIndicator(Static)` | Reactive | `tui_app.py:237` |
 
 ### State Management
 
@@ -78,15 +82,24 @@ Single file: `musicplayer_tui.css`. Dark theme (`#0b0b0b` background, `#f0e6c8` 
 
 ### Library/Database
 
-No database. File-based:
+No runtime database — the app is file-based:
 - Radio: JSON station files (`stations.json`), loaded via `anyio.open_file` async I/O
 - Local: `load_local_files()` iterates directory for `.mp3`, creates `ListItem` with `item.data = {"source": Path, "title": str, "duration": None}`
-- M3U: `load_m3u()` parses `#EXTINF` metadata, resolves relative paths, batched mounting (200/batch, max 5000)
+- M3U: `load_m3u()` parses `#EXTINF` metadata, resolves relative paths, batched mounting (200/batch, max 2000 via `MAX_PLAYLIST_ITEMS`)
+
+Note: the test suite maintains a *generated* SQLite inventory at the repo root
+(`testsuite.db`) for tracking tests/backlog/runs. It is gitignored and refreshed on
+every `uv run pytest` run (see `src/tests/testsuite_db.py`). It is not app data.
 
 ### Duration Fetching
 
-- `fetch_duration`: `@work(thread=True, exclusive=True)` function at module level (NOT a class method — likely broken since `@work` expects methods)
-- `_populate_missing_durations`: Optional async background task (disabled by default via `self.fetch_duration = False`)
+- `fetch_duration(self, item)`: a plain `async def` class method that reads the file tag
+  via the module-level `MutagenFile` binding, stores `item.data["duration"]`, and refreshes
+  the item's label. It is launched off the main thread from `load_local_files` via
+  `self.run_worker(self.fetch_duration, item)`.
+- `_populate_missing_durations(list_view)`: optional async background task that fills missing
+  durations for already-mounted items. It handles Path/string/URL sources (skips URLs and
+  non-existent files) and is enabled only when `self.fetch_duration_eager` is `True`.
 
 ## Testing
 
@@ -94,8 +107,11 @@ No database. File-based:
 - Config: `pytest.ini` (`testpaths = src/tests`)
 - Pattern: Inject `FakeMPV` / `FakeMPVPlayer` via `app.mpv = ...`
 - Stub `app.query_one` and `app.update_now_playing` to avoid Textual DOM
-- Use `asyncio.run()` for async methods
-- Run: `uv run pytest -q` from repo root (expects 26 passed)
+- Use `asyncio.run()` for async methods (pytest-asyncio is NOT installed)
+- Run: `uv run pytest -q` from repo root (expects 53 passed)
+- Every pytest run also refreshes the SQLite inventory `testsuite.db`; view it with
+  `uv run python scripts/report_testsuite_db.py` (rebuild/enrich via
+  `scripts/update_testsuite_db.py`). The `network`-marked radio test auto-skips offline.
 
 ## Linting/Formatting
 
@@ -125,8 +141,8 @@ Profiled methods include:
 
 ## Common Pitfalls
 
-1. **`fetch_duration` is now a proper class method** (`async def fetch_duration(self, item)`) spawned via `self.run_worker(...)` in `load_local_files` — no longer a module-level `@work` function. The old `self.fetch_duration = False` boolean flag is replaced by `self.fetch_duration_eager`.
-2. ~~Two `max_playlist_items` assignments~~ in `__init__` — **fixed**: single assignment from `MAX_PLAYLIST_ITEMS` class constant.
+1. **`fetch_duration` is an `async def` class method** spawned via `self.run_worker(self.fetch_duration, item)` from `load_local_files`. Keep its worker-trigger flag named `self.fetch_duration_eager` — never name a spawned worker the same as a bool flag.
+2. `max_playlist_items` is assigned exactly once in `__init__`, from the `MAX_PLAYLIST_ITEMS` class constant (2000). Do not re-assign it elsewhere.
 3. **Silent exception swallowing**: Most methods have bare `try/except: pass` — intentional to keep TUI alive, but makes debugging hard.
 4. **No Screen abstraction**: Mode switching via manual visibility toggling, not Textual's Screen stack.
 5. **`update_now_playing` dual path**: Posts a message AND has direct-assignment fallback — both must work.
