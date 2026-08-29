@@ -32,3 +32,7 @@ ENV/
 *.toc
 *.pyz
 *.zip
+
+# Generated test inventory database (refreshed by pytest / scripts)
+testsuite.db
+testsuite.db-*
