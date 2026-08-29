@@ -43,6 +43,12 @@ Run the application:
 uv run pytuiplayer
 ```
 
+> `uv run pytuiplayer` launches the full Textual TUI (console-script entry point
+> `pytuiplayer:main` → `MusicPlayerApp().run()`). `uv run python -m pytuiplayer`
+> does the same via the package's `__main__.py`. Running the module file directly
+> (`uv run src/pytuiplayer/tui_app.py`) will NOT launch the UI — `tui_app.py` has no
+> `__main__` guard, so it just imports and exits.
+
 Or directly:
 
 ```bash

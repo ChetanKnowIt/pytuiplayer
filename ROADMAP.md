@@ -195,3 +195,12 @@
 - `PYTUIP_PROFILE=1` enables performance profiling (logs to `pytuiplayer.performance`)
 - `_meta_label` is set on items by `load_m3u` but NOT by `load_local_files`
 - `load_stations_ui()` exists at line 882 — test at line 55 uses it correctly
+
+### Entry point / launch (fixed)
+- `uv run pytuiplayer` (console script `pytuiplayer = "pytuiplayer:main"`) now launches the real TUI: `pytuiplayer/__init__.py:main` lazily imports `MusicPlayerApp` and calls `.run()`. Previously `__init__.py:main` was a `print("Hello")` stub, so the console script exited without launching the UI. `python -m pytuiplayer` (via `__main__.py`) always worked.
+- Do NOT change the entry point to `pytuiplayer.__main:main`: under this project's editable `uv_build` install, `pytuiplayer.__main` is not importable as a submodule (`import pytuiplayer.__main` fails), so the script target would not resolve. Keep the launcher reachable from `pytuiplayer:main`.
+- Running the module file directly (`uv run src/pytuiplayer/tui_app.py`) intentionally does nothing — `tui_app.py` has no `__main__` guard (by design; use the console script or `-m`).
+
+### Scripts / manual demos (not part of the pytest suite)
+- `scripts/run_radio_demo.py` — headless launch + start a radio stream (live network).
+- `scripts/run_tui_app_demo.py` — headless launch; asserts the TUI mounts, loads stations, and renders the Now Playing widget (no playback).

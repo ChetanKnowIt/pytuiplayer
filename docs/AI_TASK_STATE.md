@@ -39,6 +39,24 @@ feature/01-song-duration (ahead 2 commits from origin, plus uncommitted local ch
 ## Next Step
 Awaiting task assignment from user. Suggested: extract in-method imports to module top, OR add recursive dir scan, OR add playlist keyboard binding. (Do NOT commit unless explicitly asked.)
 
+## Completed (entry-point / TUI-launch fix)
+### Investigation
+- `uv run src/pytuiplayer/tui_app.py` exited silently (no `__main__` guard in tui_app.py — never existed in any commit).
+- `uv run pytuiplayer` printed "Hello from pytuiplayer!" and exited: `pyproject.toml` entry point `pytuiplayer = "pytuiplayer:main"` resolved to `pytuiplayer/__init__.py:main`, which was a `print("Hello")` stub (dead since the initial commit). The real launcher `pytuiplayer/__main__.py:main` (`MusicPlayerApp().run()`) was added later but never wired in.
+- `uv run python -m pytuiplayer` always worked (uses `__main__.py` via `-m`).
+
+### Fix (Option A, adapted to uv editable install)
+- Reverted entry point to `pytuiplayer:main` and made `pytuiplayer/__init__.py:main` lazily import `MusicPlayerApp` and call `.run()` (so `uv run pytuiplayer` launches the real TUI). Verified: renders Music Player / Now Playing / controls.
+- Did NOT use the literal `pytuiplayer.__main:main` target: under this editable `uv_build` install `import pytuiplayer.__main` fails (submodule not exposed), so that target would not resolve. Documented this constraint in ROADMAP.md.
+- Declined Option C (no `__main__` guard added to tui_app.py) per user request; instead added a standalone headless demo under scripts.
+
+### Test (mirrors run_radio_demo.py, under scripts/)
+- Added `scripts/run_tui_app_demo.py`: launches `MusicPlayerApp` headless via `run_test()`, asserts it mounts, loads stations, sets title "Music Player", and renders the Now Playing widget. Verified: prints SUCCESS, exit 0.
+
+## Tests (entry-point fix)
+- 31 passed in ~9.2s; ruff: All checks passed.
+- Manual: `uv run pytuiplayer` renders the full TUI; `uv run python scripts/run_tui_app_demo.py` prints SUCCESS.
+
 ## Completed (this follow-up session)
 ### Radio integration test promoted into the pytest suite
 - Converted `scripts/run_radio_demo.py` into a real pytest test: `src/tests/test_radio_integration.py::test_radio_starts_stream_and_updates_now_playing`.
