@@ -85,3 +85,16 @@ Awaiting task assignment from user. Suggested: extract in-method imports to modu
 - 31 passed in ~8.7s (includes the live radio integration test; off-network it auto-skips).
 - ruff check: All checks passed.
 - Per-file counts (collect-only): test_main_entry(1), test_app_integration(1), test_station_player(3), test_now_playing_widget(2), test_mpv_player(2), test_tui_app(21), test_radio_integration(1) = 31.
+
+## Merge to main (feature/01-song-duration)
+- Branch `feature/01-song-duration` was 10 commits ahead of `origin/main`; `main` was in sync (0 behind).
+- Quality gate before merge: `uv run ruff check .` → All checks passed; `uv run pytest -q` → 31 passed.
+- Merged with `git checkout main && git merge --no-ff feature/01-song-duration` (merge commit `6b417cb`) and pushed to `origin/main`. `--no-ff` keeps a visible feature boundary.
+- Post-merge verify on `main`: ruff clean, 31 passed; `main` in sync with `origin/main` (0).
+- ROADMAP.md: added a "Merge / Release Checklist" (8-step pre/post-merge gate) and a "Workflow / Branching Policy" section so each future feature builds from a green, known-good baseline.
+
+## Current baseline (ready for next feature)
+- `main` @ `6b417cb` is the known-good baseline: 31 tests pass, ruff clean, TUI launches via `uv run pytuiplayer`.
+- Next feature should start on a fresh branch off updated `main`:
+  `git checkout main && git pull && git checkout -b feature/<next-slug>`.
+- Suggested next features (from ROADMAP): recursive `load_local_files` scan (#9 / Medium #1), Screen abstraction (#4), local-file metadata polling (#11), ProgressBar responsive width (#10).

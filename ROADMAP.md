@@ -217,3 +217,25 @@ Every feature (and every non-trivial change) is developed on its **own independe
 - **One feature = one branch = one reviewable change.** Keep branches focused; split large efforts into smaller, independently-mergeable branches where possible.
 - **No merge to `main` with failing tests or lint.** If a test must change, the change and its rationale travel together in the same branch.
 - **Document as you go:** update `ROADMAP.md` (mark items Done / add backlog) and `docs/AI_TASK_STATE.md` within the branch so the merge carries its own status.
+
+### Merge / Release Checklist (run before merging a feature branch into `main`)
+
+Run these from the feature branch (and re-run on `main` after the merge) so the next
+feature build always starts from a green, known-good state:
+
+1. **Sync:** `git fetch` and ensure `main` has no unmerged commits that conflict
+   (`git rev-list --count main..origin/main` → `0`).
+2. **Lint gate:** `uv run ruff check .` → `All checks passed!`
+3. **Test gate:** `uv run pytest -q` → all passed (the `network` radio test may skip
+   only when offline; everything else must be green).
+4. **Type/import sanity (optional):** `uv run python -c "import pytuiplayer"` and
+   `uv run pytuiplayer` (or `uv run python scripts/run_tui_app_demo.py`) boot cleanly.
+5. **Docs in sync:** `ROADMAP.md` and `docs/AI_TASK_STATE.md` reflect the branch's work.
+6. **Merge:** `git checkout main && git merge --no-ff feature/<slug>` (the `--no-ff`
+   keeps a visible feature boundary in history), then `git push origin main`.
+7. **Post-merge verify:** re-run steps 2–3 on `main` to confirm the merge is green.
+8. **Next feature:** start the new work on a fresh branch off updated `main`
+   (`git checkout main && git pull && git checkout -b feature/<next-slug>`).
+
+> History note: `feature/01-song-duration` was merged to `main` (merge commit `6b417cb`)
+> and pushed. After that, `main` is the known-good baseline for the next feature branch.
