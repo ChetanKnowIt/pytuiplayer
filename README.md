@@ -107,7 +107,7 @@ Use this quick checklist to manually verify the core behaviors of the TUI and to
 
 * Run automated tests:
   - Command: `uv run pytest -q`
-  - Expected: **26 passed** (current test suite)
+  - Expected: **31 passed** (last run: 2026-08-29 23:29 IST; includes 1 `network`-marked radio integration test that auto-skips offline)
 
 * Manual UI checks (run from project root):
   1. Start the app: `uv run pytuiplayer`

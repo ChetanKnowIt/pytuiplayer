@@ -38,3 +38,20 @@ feature/01-song-duration (ahead 2 commits from origin, plus uncommitted local ch
 
 ## Next Step
 Awaiting task assignment from user. Suggested: extract in-method imports to module top, OR add recursive dir scan, OR add playlist keyboard binding. (Do NOT commit unless explicitly asked.)
+
+## Completed (this follow-up session)
+### Radio integration test promoted into the pytest suite
+- Converted `scripts/run_radio_demo.py` into a real pytest test: `src/tests/test_radio_integration.py::test_radio_starts_stream_and_updates_now_playing`.
+- Test runs the real `MusicPlayerApp` headless via Textual's `run_test()` harness with mpv routed to a null audio sink (`MPV_HOME` temp dir, `ao=null`).
+- It auto-skips when no station URL is reachable (offline CI); marked `pytest.mark.network` and registered in `pytest.ini`. Set `PYTUIP_RADIO_TEST=1` to force-run even if probes fail.
+- Confirmed locally: the network test connects to a live SomaFM stream and passes.
+
+### Structured test documentation
+- ROADMAP.md: added a "Test Inventory (existing suite)" section — per-file tables with (name, path, 1-line description) for all 31 tests across 7 files. Total = 31 test functions.
+- README.md: updated expected test count 26 -> 31 with last-run timestamp (2026-08-29 23:29 IST) and a note that 1 test is network-marked/auto-skips offline.
+- ROADMAP.md Notes: updated "expect 26 passed" -> "expect 31 passed (last run: 2026-08-29 23:29 IST)".
+
+## Tests
+- 31 passed in ~8.7s (includes the live radio integration test; off-network it auto-skips).
+- ruff check: All checks passed.
+- Per-file counts (collect-only): test_main_entry(1), test_app_integration(1), test_station_player(3), test_now_playing_widget(2), test_mpv_player(2), test_tui_app(21), test_radio_integration(1) = 31.
