@@ -33,10 +33,10 @@ from textual.widgets import (
 )
 from textual.worker import get_current_worker
 
-from pytuiplayer.mpv_player import MPVPlayer
-from pytuiplayer.station_player import StationPlayer
 from pytuiplayer.logging_config import get_logger, setup_logging
+from pytuiplayer.mpv_player import MPVPlayer
 from pytuiplayer.profiling import profile, profile_async
+from pytuiplayer.station_player import StationPlayer
 
 logger = get_logger("tui_app")
 
@@ -108,10 +108,12 @@ class NowPlaying(Static):
         # tick every 0.6s to drive the marquee
         self.set_interval(0.6, self._tick)
 
+    @profile
     def _tick(self) -> None:
         self._offset = (self._offset + 1) % max(1, len(self.title) + 1)
         self.refresh()
 
+    @profile
     def on_now_playing_message(self, message: "NowPlayingMessage") -> None:
         # Update widget state when a NowPlayingMessage is posted
         try:
@@ -152,6 +154,7 @@ class NowPlaying(Static):
             slice_end = len(buf)
         return buf[start:slice_end]
 
+    @profile
     def render(self) -> str:
         # countdown (remaining) to show at top-left
         remaining = None
@@ -223,6 +226,7 @@ class ProgressBar(Static):
         m, s = divmod(int(seconds), 60)
         return f"{m:02d}:{s:02d}"
 
+    @profile
     def render(self) -> str:
         # Unknown duration -> if we have radio metadata, show it on the progress area
         if not self.duration or self.duration <= 0:
@@ -251,6 +255,7 @@ class ProgressBar(Static):
 class VolumeIndicator(Static):
     volume = reactive(50)
     muted = reactive(False)
+    @profile
     def render(self) -> str:
         vol = "🔇" if self.muted else f"🔊{self.volume}"
         return f"Volume: {vol}"
@@ -401,6 +406,7 @@ class MusicPlayerApp(App):
         except Exception:
             pass
 
+    @profile
     def update_volume_ui(self):
         try:
             vol = self.query_one("#volume-indicator", VolumeIndicator)
@@ -832,6 +838,7 @@ class MusicPlayerApp(App):
             # Show a user‑friendly message
             self.notify(f"❌ Error: {type(exc).__name__}", severity="error")
 
+    @profile_async
     async def load_stations(self, path: Path) -> None:
         """
         Load the stations JSON file, build a ``StationPlayer`` and populate the
@@ -871,6 +878,7 @@ class MusicPlayerApp(App):
         # (optional) give the user some feedback
         self.notify(f"✅ Loaded {len(self.stations.stations)} stations")
 
+    @profile_async
     async def load_stations_ui(self) -> None:
         """Populate the station ListView from the current ``self.stations`` object."""
         if not self.stations:
@@ -925,6 +933,7 @@ class MusicPlayerApp(App):
                 print(f"[PYTUIP DEBUG] NowPlaying widget not mounted: {e}")
             return
 
+    @profile
     def _refresh_metadata(self):
         # Poll MPV for stream metadata (icy-title / media-title) when radio is playing
         try:
@@ -951,6 +960,7 @@ class MusicPlayerApp(App):
         except Exception:
             return
 
+    @profile_async
     async def _load_json(self, path: Path) -> Any:          # return whatever json.loads gives
         # 1️⃣  Await the coroutine that creates the async file object
         async with await open_file(path, mode="r", encoding="utf-8") as f:
@@ -1189,6 +1199,7 @@ class MusicPlayerApp(App):
         except Exception:
             pass
 
+    @profile
     def action_play_playlist(self) -> None:
         """Start playback from the first item in the local playlist, if any."""
         try:

@@ -1,6 +1,8 @@
-from pytest import MonkeyPatch
-from pytuiplayer.tui_app import MusicPlayerApp
 from pathlib import Path
+
+from pytest import MonkeyPatch
+
+from pytuiplayer.tui_app import MusicPlayerApp
 
 
 class FakeMPVPlayer:
@@ -51,8 +53,9 @@ def test_tui_toggle_play_and_stop():
 
 
 def test_load_stations_ui_updates_list():
-    from pytuiplayer.station_player import StationPlayer
     import asyncio
+
+    from pytuiplayer.station_player import StationPlayer
 
     app = MusicPlayerApp()
     app.mpv = FakeMPVPlayer()
@@ -74,7 +77,7 @@ def test_load_stations_ui_updates_list():
     asyncio.run(app.load_stations_ui())
 
     assert len(fake.items) == 2
-    assert getattr(fake.items[0], "data")["name"] == "One"
+    assert fake.items[0].data["name"] == "One"
 
 
 def test_progressbar_unknown_duration():
@@ -186,7 +189,8 @@ def test_explicit_play_and_pause():
 
 
 def test_visibility_toggle_hides_unused_widgets():
-    import types, asyncio
+    import asyncio
+    import types
 
     app = MusicPlayerApp()
     # fake widgets to capture display/visible/disabled changes
@@ -237,7 +241,7 @@ def test_visibility_toggle_hides_unused_widgets():
 
 
 def test_progressbar_shows_radio_meta_when_streaming():
-    from pytuiplayer.tui_app import ProgressBar, NowPlaying
+    from pytuiplayer.tui_app import NowPlaying, ProgressBar
 
     app = MusicPlayerApp()
     class FakePlayer:
@@ -296,7 +300,8 @@ def test_play_local_calls_mpv_and_sets_title():
 
 
 def test_directory_tree_selection_plays_file_when_local():
-    import types, asyncio
+    import asyncio
+    import types
 
     app = MusicPlayerApp()
 
@@ -329,7 +334,8 @@ def test_play_local_uses_mutagen_tags_if_available(monkeypatch: MonkeyPatch):
     app.update_now_playing = lambda *a, **k: None
 
     # inject a fake mutagen.File that returns dict-like metadata
-    import sys, types
+    import sys
+    import types
     fake_mutagen = types.SimpleNamespace(File=lambda *a, **k: {"album": ["MyAlbum"], "title": ["MyTitle"]})
     monkeypatch.setitem(sys.modules, 'mutagen', fake_mutagen)
 
@@ -361,8 +367,8 @@ song2.mp3
             self.items = []
         def clear(self):
             self.items.clear()
-        async def mount(self, item):
-            self.items.append(item)
+        async def mount(self, *items):
+            self.items.extend(items)
 
     fake = FakeList()
     app.query_one = lambda *a, **k: fake
@@ -372,10 +378,10 @@ song2.mp3
 
     assert len(fake.items) == 2
     # loader now stores a dict with source and meta without resolving paths
-    assert isinstance(getattr(fake.items[0], 'data'), dict)
-    assert getattr(fake.items[0], 'data')['source'].endswith('song1.mp3')
+    assert isinstance(fake.items[0].data, dict)
+    assert fake.items[0].data['source'].endswith('song1.mp3')
     # our loader adds a `_meta_label` attribute to help testing/inspection
-    assert getattr(fake.items[0], '_meta_label') == 'Artist A - Title A'
+    assert fake.items[0]._meta_label == 'Artist A - Title A'
 
 
 def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: MonkeyPatch):
@@ -398,8 +404,8 @@ def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: Mo
             self.items = []
         def clear(self):
             self.items.clear()
-        async def mount(self, item):
-            self.items.append(item)
+        async def mount(self, *items):
+            self.items.extend(items)
 
     fake = FakeList()
     app.query_one = lambda *a, **k: fake
@@ -425,7 +431,8 @@ def test_playlist_item_uses_extinf_metadata_on_play():
     """Selecting a playlist item created by `load_m3u` should use the
     playlist `#EXTINF` metadata as the displayed `current_title` when played.
     """
-    import types, asyncio
+    import asyncio
+    import types
 
     app = MusicPlayerApp()
 
@@ -440,7 +447,7 @@ def test_playlist_item_uses_extinf_metadata_on_play():
     app.option_mode = "local"
 
     # Create a fake list item as load_m3u now produces: {source, meta}
-    from textual.widgets import ListItem, Label
+    from textual.widgets import Label, ListItem
     item = ListItem(Label("song.mp3"))
     item.data = {"source": "/tmp/song.mp3", "meta": "Artist X - Track Y"}
 
@@ -466,7 +473,7 @@ def test_play_playlist_starts_first_item():
     app.mpv = FakeMPV()
     app.update_now_playing = lambda *a, **k: None
 
-    from textual.widgets import ListItem, Label
+    from textual.widgets import Label, ListItem
     item = ListItem(Label("song.mp3"))
     item.data = {"source": "/tmp/first.mp3", "meta": "First - Song"}
 

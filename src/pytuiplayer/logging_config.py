@@ -13,7 +13,8 @@ def setup_logging(level: str | None = None, log_file: Path | None = None) -> Non
     """Configure logging for the application.
     
     Args:
-        level: Log level (DEBUG, INFO, WARNING, ERROR). Defaults to env var PYTUIP_LOG_LEVEL or INFO.
+        level: Log level (DEBUG, INFO, WARNING, ERROR).
+            Defaults to env var PYTUIP_LOG_LEVEL or INFO.
         log_file: Path to log file. Defaults to ~/.local/share/pytuiplayer/app.log
     """
     if level is None:

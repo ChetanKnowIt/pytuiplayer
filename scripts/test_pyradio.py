@@ -1,6 +1,7 @@
-from pytuiplayer.station_player import StationPlayer
-from pytuiplayer.mpv_player import MPVPlayer
 import time
+
+from pytuiplayer.mpv_player import MPVPlayer
+from pytuiplayer.station_player import StationPlayer
 
 mpv = MPVPlayer()
 radio_player = StationPlayer(mpv)

@@ -1,5 +1,6 @@
-from pytuiplayer.mpv_player import MPVPlayer
 from pathlib import Path
+
+from pytuiplayer.mpv_player import MPVPlayer
 
 mpv = MPVPlayer()
 

@@ -10,11 +10,13 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 
 | File | Role |
 |------|------|
-| `src/pytuiplayer/tui_app.py` | Main App + all widgets + business logic (1186-line monolith) |
+| `src/pytuiplayer/tui_app.py` | Main App + all widgets + business logic (1225-line monolith) |
 | `src/pytuiplayer/mpv_player.py` | Thin wrapper around `python-mpv` |
 | `src/pytuiplayer/station_player.py` | Station list manager |
 | `src/pytuiplayer/stations.json` | Default radio stations |
 | `src/pytuiplayer/musicplayer_tui.css` | Textual CSS theme |
+| `src/pytuiplayer/logging_config.py` | Logging configuration (setup_logging, get_logger) |
+| `src/pytuiplayer/profiling.py` | Performance profiling decorators (@profile, @profile_async) |
 | `src/pytuiplayer/__main__.py` | CLI entrypoint |
 | `src/tests/` | Pytest test suite |
 
@@ -28,9 +30,9 @@ Single `MusicPlayerApp(App)` class in `tui_app.py`. No Screen abstraction — mo
 
 | Widget | Type | Location |
 |--------|------|----------|
-| `NowPlaying(Static)` | Reactive | `tui_app.py:95` |
-| `ProgressBar(Static)` | Reactive | `tui_app.py:211` |
-| `VolumeIndicator(Static)` | Reactive | `tui_app.py:247` |
+| `NowPlaying(Static)` | Reactive | `tui_app.py:99` |
+| `ProgressBar(Static)` | Reactive | `tui_app.py:215` |
+| `VolumeIndicator(Static)` | Reactive | `tui_app.py:251` |
 
 ### State Management
 
@@ -106,15 +108,29 @@ Ruff configured in `pyproject.toml`:
 
 Set `PYTUIP_DEBUG=1` environment variable for debug tracing (stack traces on `update_now_playing` calls, error logging in `on_now_playing_message`).
 
+Set `PYTUIP_PROFILE=1` to enable performance profiling (logs execution times at DEBUG level to `pytuiplayer.performance` logger).
+
+## Profiling
+
+Profiling decorators (`@profile`, `@profile_async`) from `pytuiplayer.profiling` are applied to all critical UI event handlers, render methods, and async operations. When `PYTUIP_PROFILE=1` is set, each profiled method logs its execution time in milliseconds. When disabled (default), the decorators add near-zero overhead (single env var check).
+
+Profiled methods include:
+- All render methods (NowPlaying, ProgressBar, VolumeIndicator)
+- All action handlers (play, pause, stop, seek, volume, mute)
+- Event handlers (on_mount, on_button_pressed, on_list_view_selected, etc.)
+- Async loaders (load_stations, load_local_files, load_m3u, _load_json)
+- Polling callbacks (update_progress, _refresh_metadata)
+- UI updates (update_now_playing, update_volume_ui)
+
 ## Common Pitfalls
 
 1. **`fetch_duration` is module-level**, not a class method. The `@work` decorator expects methods — this is likely broken.
-2. **Two `max_playlist_items` assignments** in `__init__` (lines 291, 293) — the second silently overwrites the first.
+2. **Two `max_playlist_items` assignments** in `__init__` (lines 295, 297) — the second silently overwrites the first.
 3. **Silent exception swallowing**: Most methods have bare `try/except: pass` — intentional to keep TUI alive, but makes debugging hard.
 4. **No Screen abstraction**: Mode switching via manual visibility toggling, not Textual's Screen stack.
 5. **`update_now_playing` dual path**: Posts a message AND has direct-assignment fallback — both must work.
-6. **Test asserts `_meta_label`** (test_tui_app.py:378) but production code never sets it — this test will fail.
-7. **`item.data` shape varies**: Can be a dict (`load_m3u`), a dict (`load_local_files`), or a raw station dict — always use `isinstance` checks.
+6. **`item.data` shape varies**: Can be a dict (`load_m3u`), a dict (`load_local_files`), or a raw station dict — always use `isinstance` checks.
+7. **`_meta_label` attribute**: Set on items by `load_m3u` (line 652) but NOT by `load_local_files` — tests must account for this difference.
 
 ## Rules for Modifying Existing Components
 
@@ -124,6 +140,7 @@ Set `PYTUIP_DEBUG=1` environment variable for debug tracing (stack traces on `up
 4. Maintain backward compatibility for `item.data` shapes (dict vs Path/str).
 5. Test both radio and local mode paths.
 6. Run `uv run pytest -q` and `uv run ruff check .` before finishing.
+7. Add `@profile` / `@profile_async` decorators to new render methods, event handlers, and async operations.
 
 ## Rules for Adding New Components
 
@@ -133,3 +150,4 @@ Set `PYTUIP_DEBUG=1` environment variable for debug tracing (stack traces on `up
 4. Add corresponding keyboard bindings to `BINDINGS` list.
 5. Add tests in `src/tests/` following the `FakeMPV` injection pattern.
 6. Update CSS in `musicplayer_tui.css` for new widget IDs.
+7. Add `@profile` decorator to render methods and event handlers.

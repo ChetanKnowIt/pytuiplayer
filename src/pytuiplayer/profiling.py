@@ -2,7 +2,6 @@
 
 import functools
 import time
-import logging
 
 from .logging_config import get_logger
 

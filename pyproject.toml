@@ -35,3 +35,7 @@ fix = true
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+"src/pytuiplayer/tui_app_ast.pyi" = ["F821", "E501"]
+"src/tests/*" = ["E501"]

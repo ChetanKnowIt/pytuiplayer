@@ -7,39 +7,44 @@
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
 | 1 | `fetch_duration` is module-level, not a class method — `@work` decorator expects methods | `tui_app.py:41-57` | Duration fetching is broken; decorator misapplied |
-| 2 | Test asserts `_meta_label` attribute that production code never sets | `test_tui_app.py:378` | Test will always fail |
-| 3 | `load_stations_ui()` called in tests but method doesn't exist on class | `test_tui_app.py:74` | Test will always fail (AttributeError) |
-| 4 | Two `max_playlist_items` assignments — second silently overwrites first | `tui_app.py:291,293` | Config intent lost; MAX_PLAYLIST_ITEMS class constant ignored |
+| 2 | Two `max_playlist_items` assignments — second silently overwrites first | `tui_app.py:295,297` | Config intent lost; MAX_PLAYLIST_ITEMS class constant ignored |
+| 3 | `_populate_missing_durations` assumes `source` is string but `load_local_files` stores Path | `tui_app.py:697` | AttributeError on Path objects |
 
 ### Design Flaws
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 5 | No Screen abstraction — mode switching via manual visibility/disabled toggling | `tui_app.py:348-390,463-518` | Brittle, repetitive, error-prone |
-| 6 | `update_now_playing` dual path (post_message + direct assignment fallback) | `tui_app.py:857-897` | Confusing control flow; hard to debug |
-| 7 | `item.data` shape varies: dict (M3U), dict (local), raw station dict (radio) | Throughout | Requires `isinstance` checks everywhere |
-| 8 | Imports inside method bodies (`asyncio`, `Path`, `DirectoryTree`) | `tui_app.py:729-733` | Unusual, inefficient, hurts readability |
-| 9 | Silent exception swallowing (`try/except: pass`) in most methods | Throughout | Makes debugging extremely difficult |
-| 10 | `_populate_missing_durations` assumes `source` is string but `load_local_files` stores Path | `tui_app.py:683` | AttributeError on Path objects |
+| 4 | No Screen abstraction — mode switching via manual visibility/disabled toggling | `tui_app.py:348-390,463-518` | Brittle, repetitive, error-prone |
+| 5 | `update_now_playing` dual path (post_message + direct assignment fallback) | `tui_app.py:900-926` | Confusing control flow; hard to debug |
+| 6 | `item.data` shape varies: dict (M3U), dict (local), raw station dict (radio) | Throughout | Requires `isinstance` checks everywhere |
+| 7 | Imports inside method bodies (`asyncio`, `Path`, `DirectoryTree`) | `tui_app.py:745-748` | Unusual, inefficient, hurts readability |
+| 8 | Silent exception swallowing (`try/except: pass`) in most methods | Throughout | Makes debugging extremely difficult |
+| 9 | `load_local_files` only scans top-level directory — no recursive scan | `tui_app.py:532-548` | Nested music folders not supported |
+| 10 | ProgressBar bar width hardcoded to 160 chars | `tui_app.py:242` | Not responsive to terminal width |
 
 ### Missing Features / Gaps
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 11 | `load_local_files` only scans top-level directory — no recursive scan | `tui_app.py:520-536` | Nested music folders not supported |
-| 12 | No metadata fetching for local files (only radio ICY) | `_refresh_metadata` | Local files show filename only |
-| 13 | ProgressBar bar width hardcoded to 160 chars | `tui_app.py:238` | Not responsive to terminal width |
-| 14 | `action_play_playlist` relies on `items` attribute that ListView lacks | `tui_app.py:1163` | Falls back to `children`; fragile |
-| 15 | No keyboard binding for `action_play_playlist` | `BINDINGS` | Feature exists but is inaccessible |
+| 11 | No metadata fetching for local files (only radio ICY) | `_refresh_metadata` | Local files show filename only |
+| 12 | `action_play_playlist` relies on `items` attribute that ListView lacks | `tui_app.py:1192-1210` | Falls back to `children`; fragile |
+| 13 | No keyboard binding for `action_play_playlist` | `BINDINGS` | Feature exists but is inaccessible |
+
+---
+
+## Infrastructure (Completed)
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Logging module (`logging_config.py`) with `setup_logging()` and `get_logger()` | Done |
+| 2 | Profiling decorators (`@profile`, `@profile_async`) in `profiling.py` | Done |
+| 3 | Profiling applied to all critical UI event handlers and render methods | Done |
+| 4 | `PYTUIP_PROFILE=1` env var control for performance profiling | Done |
+| 5 | `PYTUIP_LOG_LEVEL` env var control for log level | Done |
 
 ---
 
 ## Test Backlog
-
-### Failing Tests (must fix)
-
-1. `test_load_m3u_parses_and_populates` — asserts `_meta_label` (line 378) which is never set
-2. `test_load_stations_ui_updates_list` — calls `load_stations_ui()` which doesn't exist
 
 ### Missing Unit Tests
 
@@ -79,9 +84,8 @@
 
 1. Fix `fetch_duration` decorator — move to class method or use `@work` correctly
 2. Remove duplicate `max_playlist_items` assignment — use single source of truth
-3. Add `load_stations_ui` method — or fix test to use existing `load_stations`
-4. Fix `_meta_label` test — either add attribute to items or remove assertion
-5. Extract imports to module top — move `asyncio`, `Path`, `DirectoryTree` imports
+3. Fix `_populate_missing_durations` Path handling — `load_local_files` stores Path, not string
+4. Extract imports to module top — move `asyncio`, `Path`, `DirectoryTree` imports
 
 ### Medium Priority
 
@@ -111,13 +115,15 @@
 3. Create `constants.py` — Move `MAX_PLAYLIST_ITEMS`, `ICON_OK`, `ICON_ERR`
 4. Standardize error handling — Replace bare `except: pass` with structured logging
 5. Add type hints — `item.data` needs TypedDict or dataclass
-6. Add logging module — Replace `print()` and `PYTUIP_DEBUG` with proper logging
 
 ---
 
 ## Notes
 
-- Run `uv run pytest -q` before and after changes — expect 26 passed (currently fewer due to known failures)
+- Run `uv run pytest -q` before and after changes — expect 26 passed
 - Run `uv run ruff check .` for linting
 - All tests use `FakeMPV` injection pattern — maintain this for new tests
 - `PYTUIP_DEBUG=1` enables stack traces on `update_now_playing` calls
+- `PYTUIP_PROFILE=1` enables performance profiling (logs to `pytuiplayer.performance`)
+- `_meta_label` is set on items by `load_m3u` but NOT by `load_local_files`
+- `load_stations_ui()` exists at line 882 — test at line 55 uses it correctly
