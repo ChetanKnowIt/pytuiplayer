@@ -121,6 +121,24 @@ Ruff configured in `pyproject.toml`:
 - Rules: E, F, I, UP, B
 - Fix on save enabled
 
+## Commit Message Convention
+
+Follow the repo's established format — a `WIP:` prefix, a short present-tense summary,
+and a timestamp. This matches the existing history (e.g.
+`WIP: Fix TUI launch entry point + add tui boot demo Aug 29 2026, 23:55`).
+
+Format:
+```
+WIP: <short summary> <Mon DD YYYY, HH:MM>
+```
+
+Rules:
+- Prefix every commit with `WIP:` (no other prefixes like `feat:`/`fix:`/`docs:`).
+- Use a short, present-tense, human-readable summary of the change.
+- Append the date and time in `Mon DD YYYY, HH:MM` form (e.g. `Aug 30 2026, 14:05`).
+- For feature branches, one `WIP:` commit per logical step is fine; squash is not required
+  before merge (the merge itself uses a `--no-ff` merge commit).
+
 ## Debugging
 
 Set `PYTUIP_DEBUG=1` environment variable for debug tracing (stack traces on `update_now_playing` calls, error logging in `on_now_playing_message`).
