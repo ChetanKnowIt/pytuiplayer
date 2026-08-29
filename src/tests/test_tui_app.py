@@ -488,3 +488,123 @@ def test_play_playlist_starts_first_item():
 
     assert app.mpv.last == "/tmp/first.mp3"
     assert app.current_title == "First - Song"
+
+
+def test_fetch_duration_method_updates_item_data(tmp_path: Path, monkeypatch: MonkeyPatch):
+    """fetch_duration reads the file tag and stores the duration in
+    ``item.data['duration']`` plus refreshes the visible label."""
+    import asyncio
+    import types
+
+    app = MusicPlayerApp()
+
+    # fetch_duration uses the module-level MutagenFile binding, so patch it there
+    monkeypatch.setattr(
+        "pytuiplayer.tui_app.MutagenFile",
+        lambda *a, **k: types.SimpleNamespace(info=types.SimpleNamespace(length=137.0)),
+    )
+
+    # call_from_thread must run synchronously in unit tests
+    app.call_from_thread = lambda fn, *a: fn(*a)
+
+    from textual.widgets import Label, ListItem
+
+    file = tmp_path / "song.mp3"
+    file.write_text("")  # exists on disk
+    label = Label("song.mp3")
+    item = ListItem(label)
+    item.data = {"source": file, "title": "song.mp3", "duration": None}
+    # In a live app the Label is mounted; here stub query_one to return it
+    item.query_one = lambda *a, **k: label
+
+    asyncio.run(app.fetch_duration(item))
+
+    assert item.data["duration"] == 137
+    # The visible label is updated via call_from_thread -> label.update(...)
+    assert "02:17" in str(item.query_one(Label).render())
+
+
+def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: MonkeyPatch):
+    """Regression: load_local_files must call the fetch_duration worker method,
+    NOT a boolean flag. With the old bug (self.fetch_duration=False) this raised
+    'bool object is not callable'."""
+    import asyncio
+
+    app = MusicPlayerApp()
+    app.update_now_playing = lambda *a, **k: None
+
+    class FakeList:
+        def __init__(self):
+            self.items = []
+        def clear(self):
+            self.items.clear()
+        async def mount(self, *items):
+            self.items.extend(items)
+
+    fake = FakeList()
+
+    # Replace run_worker so we capture the coroutine without a live app loop
+    captured = {}
+    def fake_run_worker(work, *args):
+        captured["work"] = work
+        captured["args"] = args
+        return None
+    app.run_worker = fake_run_worker
+
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_text("")
+    app.query_one = lambda *a, **k: fake
+    app.local_items = {}
+
+    asyncio.run(app.load_local_files(tmp_path))
+
+    # The list must have one item and the duration worker must have been called
+    assert len(fake.items) == 1
+    assert captured.get("work") is not None
+    assert captured["work"].__func__ is app.fetch_duration.__func__
+    assert len(captured.get("args", ())) == 1
+
+
+def test_populate_missing_durations_handles_local_path_source(tmp_path: Path, monkeypatch: MonkeyPatch):
+    """Regression: _populate_missing_durations must handle a `source` that is a
+    Path and a `data` dict with only 'title' (no 'meta'), as produced by
+    load_local_files. The old code called str.startswith on a Path and used
+    item.data['meta'] (KeyError)."""
+    import asyncio
+    import types
+
+    app = MusicPlayerApp()
+    app.update_now_playing = lambda *a, **k: None
+    app.call_from_thread = lambda fn, *a: fn(*a)
+
+    # Fake mutagen returning a duration
+    fake_mutagen = types.SimpleNamespace(
+        File=lambda *a, **k: types.SimpleNamespace(info=types.SimpleNamespace(length=95.0))
+    )
+    monkeypatch.setitem(__import__("sys").modules, "mutagen", fake_mutagen)
+
+    from textual.widgets import Label, ListItem
+
+    file = tmp_path / "local.mp3"
+    file.write_text("")
+    item = ListItem(Label("local.mp3"))
+    item.data = {"source": file, "title": "local.mp3", "duration": None}
+
+    class FakeList:
+        def __init__(self, children):
+            self.children = children
+
+    fake = FakeList([item])
+    app.query_one = lambda *a, **k: fake
+
+    asyncio.run(app._populate_missing_durations(fake))
+
+    assert item.data["duration"] == 95
+
+
+def test_max_playlist_items_single_source_of_truth():
+    """Regression: __init__ must set max_playlist_items exactly once, from the
+    MAX_PLAYLIST_ITEMS class constant (old code silently overrode it with 5000)."""
+    app = MusicPlayerApp()
+    assert app.max_playlist_items == MusicPlayerApp.MAX_PLAYLIST_ITEMS
+    assert app.max_playlist_items == 2000

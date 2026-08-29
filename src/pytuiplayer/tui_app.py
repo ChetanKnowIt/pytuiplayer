@@ -13,7 +13,6 @@ except Exception:  # pragma: no cover
     
 from anyio import open_file  # <- a coroutine
 from mutagen import File as MutagenFile
-from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -31,7 +30,6 @@ from textual.widgets import (
     RadioSet,
     Static,
 )
-from textual.worker import get_current_worker
 
 from pytuiplayer.logging_config import get_logger, setup_logging
 from pytuiplayer.mpv_player import MPVPlayer
@@ -41,24 +39,8 @@ from pytuiplayer.station_player import StationPlayer
 logger = get_logger("tui_app")
 
 
-#### HELPER METHODS #### 
-@work(thread=True, exclusive=True)
-def fetch_duration(self, file_path: Path):
-    """Fetch the duration of a local MP3 without blocking the UI."""
-    worker = get_current_worker()
-    try:
-        audio = MutagenFile(file_path)
-        duration = int(audio.info.length) if audio and audio.info else None
-    except Exception:
-        duration = None
-
-    # Safely update the UI from the thread
-    if not worker.is_cancelled:
-        item = self.local_items.get(file_path)
-        if item:
-            item.data["duration"] = duration
-            label = f"{item.data['title']:<40} {self.fmt_mmss(duration)}"
-            self.call_from_thread(item.query_one(Label).update, label)
+#### HELPER METHODS ####
+# (fetch_duration is now a @work method on MusicPlayerApp)
 
 # ----------------------------------------------------------------------
 # Helper utilities (unchanged from your original code, just moved out)
@@ -299,8 +281,7 @@ class MusicPlayerApp(App):
         # Playlist loading controls (can be overridden in tests or by callers)
         self.max_playlist_items = self.MAX_PLAYLIST_ITEMS
         self.playlist_batch_size = 200
-        self.max_playlist_items = 5000          # or None for “no limit”
-        self.fetch_duration = False             # set True if you want eager loading
+        self.fetch_duration_eager = False       # set True for eager duration fetch at load
 
 
     def compose(self) -> ComposeResult:
@@ -462,7 +443,49 @@ class MusicPlayerApp(App):
             return "--:--"
         m, s = divmod(int(seconds), 60)
         return f"{m:02d}:{s:02d}"
-    
+
+    async def fetch_duration(self, item: ListItem) -> None:
+        """Fetch the duration of a local MP3 and update its list item.
+
+        This is a plain coroutine that runs off the main thread when launched via
+        ``self.run_worker(self.fetch_duration, item)`` from ``load_local_files``
+        (the correct Textual worker entry point). It resolves the item's ``source``
+        ``Path``/string, reads the tag with mutagen, stores the duration in
+        ``item.data['duration']``, and refreshes the visible label.
+        """
+        data = getattr(item, "data", None)
+        if not isinstance(data, dict):
+            return
+        src = data.get("source")
+        if src is None:
+            return
+        # Skip radio/stream URLs – duration is not available from local tags.
+        if isinstance(src, str) and src.startswith(
+            ("http://", "https://", "rtmp://", "ftp://")
+        ):
+            return
+        try:
+            src_path = Path(src)
+        except (TypeError, ValueError):
+            return
+
+        try:
+            audio = MutagenFile(str(src_path))
+            duration = int(audio.info.length) if audio and audio.info else None
+        except Exception:
+            duration = None
+
+        data["duration"] = duration
+        try:
+            label_text = data.get("title") or (src_path.name if src_path else "")
+            self.call_from_thread(
+                item.query_one(Label).update,
+                f"{label_text:<40} {self.fmt_mmss(duration)}",
+            )
+        except Exception:
+            # Widget may have been torn down; nothing to update.
+            pass
+
     # async def load_stations(self, path: Path):
     #     try:
     #         self.stations = StationPlayer(self.mpv, stations=self._load_json(path))
@@ -550,8 +573,8 @@ class MusicPlayerApp(App):
             await local_list.mount(item)
             self.local_items[file] = item
 
-            # Fire-and-forget: fetch duration in background
-            self.fetch_duration(file)
+            # Fire-and-forget: fetch duration in background (Textual worker)
+            self.run_worker(self.fetch_duration, item)
 
 
 
@@ -681,7 +704,7 @@ class MusicPlayerApp(App):
         #     want it at load time.  The default is *lazy* (i.e. we keep the
         #     integer we parsed from EXTINF, otherwise we leave it None).
         # ------------------------------------------------------------------
-        if getattr(self, "fetch_duration", False):
+        if getattr(self, "fetch_duration_eager", False):
             # This runs in the background after the UI is already populated.
             asyncio.create_task(self._populate_missing_durations(local_list))
 
@@ -693,26 +716,47 @@ class MusicPlayerApp(App):
         Walk the already‑mounted items and, for any that have ``duration is None``,
         read the file tags (e.g. via ``mutagen``) to fill the value.  This is
         deliberately *async* so it never blocks the UI.
+
+        Handles both local (``Path`` or absolute/relative string) and radio
+        (``http(s)://`` / ``rtmp://`` / ``ftp://``) sources.  Radio URLs are
+        skipped because their duration cannot be read from a local tag.
         """
         from mutagen import File as MutagenFile  # heavy import – only needed here
 
         for item in list_view.children:               # ListItem objects
-            if item.data.get("duration") is None:
-                src = item.data["source"]
-                # Only attempt local files – skip URLs.
-                if src.startswith(("http://", "https://", "rtmp://", "ftp://")):
-                    continue
-                try:
-                    audio = await asyncio.to_thread(MutagenFile, src, easy=True)
-                    dur = int(audio.info.length) if audio and audio.info else None
-                    if dur is not None:
-                        item.data["duration"] = dur
-                        # Update the visible label in‑place
-                        label = item.query_one(Label)
-                        label.text = f"{item.data['meta']:<40} {self.fmt_mmss(dur)}"
-                except Exception:
-                    # Silently ignore – we just keep the placeholder.
-                    pass
+            data = getattr(item, "data", None)
+            if not isinstance(data, dict):
+                continue
+            if data.get("duration") is not None:
+                continue
+
+            src = data.get("source")
+            if src is None:
+                continue
+            # Only attempt local files – skip URLs.
+            if isinstance(src, str) and src.startswith(
+                ("http://", "https://", "rtmp://", "ftp://")
+            ):
+                continue
+            try:
+                src_path = Path(src)
+            except (TypeError, ValueError):
+                continue
+            if not src_path.exists():
+                continue
+
+            try:
+                audio = await asyncio.to_thread(MutagenFile, src_path, easy=True)
+                dur = int(audio.info.length) if audio and audio.info else None
+                if dur is not None:
+                    data["duration"] = dur
+                    # Update the visible label in‑place
+                    label_text = data.get("meta") or data.get("title") or src_path.name
+                    label = item.query_one(Label)
+                    label.update(f"{label_text:<40} {self.fmt_mmss(dur)}")
+            except Exception:
+                # Silently ignore – we just keep the placeholder.
+                pass
 
 
     @profile_async

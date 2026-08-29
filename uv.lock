@@ -241,7 +241,6 @@ dependencies = [
     { name = "anyio" },
     { name = "mutagen" },
     { name = "python-mpv" },
-    { name = "ruff" },
     { name = "textual" },
 ]
 
@@ -249,6 +248,7 @@ dependencies = [
 dev = [
     { name = "pyinstaller" },
     { name = "pytest" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -256,7 +256,6 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.12.1" },
     { name = "mutagen", specifier = ">=1.47.0" },
     { name = "python-mpv", specifier = ">=1.0.8" },
-    { name = "ruff", specifier = ">=0.14.10" },
     { name = "textual", specifier = ">=6.11.0" },
 ]
 
@@ -264,6 +263,7 @@ requires-dist = [
 dev = [
     { name = "pyinstaller", specifier = ">=6.17.0" },
     { name = "pytest", specifier = ">=9.0.2" },
+    { name = "ruff", specifier = ">=0.14.10" },
 ]
 
 [[package]]

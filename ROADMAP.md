@@ -4,11 +4,11 @@
 
 ### Critical Bugs
 
-| # | Issue | Location | Impact |
-|---|-------|----------|--------|
-| 1 | `fetch_duration` is module-level, not a class method — `@work` decorator expects methods | `tui_app.py:41-57` | Duration fetching is broken; decorator misapplied |
-| 2 | Two `max_playlist_items` assignments — second silently overwrites first | `tui_app.py:295,297` | Config intent lost; MAX_PLAYLIST_ITEMS class constant ignored |
-| 3 | `_populate_missing_durations` assumes `source` is string but `load_local_files` stores Path | `tui_app.py:697` | AttributeError on Path objects |
+| # | Issue | Location | Impact | Status |
+|---|-------|----------|--------|--------|
+| 1 | `fetch_duration` is module-level, not a class method — `@work` decorator expects methods | `tui_app.py:41-57` (was) | Was broken; now a proper `async` `@work`-spawned class method (`run_worker`) | ✅ Fixed |
+| 2 | Two `max_playlist_items` assignments — second silently overwrites first | `tui_app.py:295,297` (was) | Was overwriting class constant; now single source of truth | ✅ Fixed |
+| 3 | `_populate_missing_durations` assumes `source` is string but `load_local_files` stores Path | `tui_app.py:697` (was) | AttributeError on Path; now handles Path/`title`/`meta` | ✅ Fixed |
 
 ### Design Flaws
 
@@ -48,7 +48,7 @@
 
 ### Missing Unit Tests
 
-1. `test_fetch_duration_updates_item_data` — verify duration is stored in item.data
+1. `test_fetch_duration_updates_item_data` — verify duration is stored in item.data ✅ Done
 2. `test_on_button_pressed_play_pause_stop` — verify button handlers call mpv correctly
 3. `test_on_list_view_selected_station_mode` — verify station selection triggers play_station
 4. `test_on_list_view_selected_local_mode` — verify local selection triggers play_local
@@ -82,9 +82,9 @@
 
 ### High Priority
 
-1. Fix `fetch_duration` decorator — move to class method or use `@work` correctly
-2. Remove duplicate `max_playlist_items` assignment — use single source of truth
-3. Fix `_populate_missing_durations` Path handling — `load_local_files` stores Path, not string
+1. Fix `fetch_duration` decorator — move to class method or use `@work` correctly ✅ Done
+2. Remove duplicate `max_playlist_items` assignment — use single source of truth ✅ Done
+3. Fix `_populate_missing_durations` Path handling — `load_local_files` stores Path, not string ✅ Done
 4. Extract imports to module top — move `asyncio`, `Path`, `DirectoryTree` imports
 
 ### Medium Priority

@@ -1,7 +1,7 @@
 [project]
 name = "pytuiplayer"
 version = "0.1.0"
-description = "A terminal-based music player built using Python, PyRadio, MPV, and Textual."
+description = "A terminal-based music player built using Python, MPV, and Textual."
 readme = "README.md"
 authors = [
     { name = "ChetanKnowIt", email = "chetanamrao174@gmail.com" }
@@ -11,7 +11,6 @@ dependencies = [
     "anyio>=4.12.1",
     "mutagen>=1.47.0",
     "python-mpv>=1.0.8",
-    "ruff>=0.14.10",
     "textual>=6.11.0",
 ]
 
@@ -26,6 +25,7 @@ build-backend = "uv_build"
 dev = [
     "pyinstaller>=6.17.0",
     "pytest>=9.0.2",
+    "ruff>=0.14.10",
 ]
 
 [tool.ruff]

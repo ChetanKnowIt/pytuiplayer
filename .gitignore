@@ -1,25 +1,24 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.pyc
 build/
 dist/
 wheels/
 *.egg-info
+*.egg
 
 # Virtual environments
-.venv
-
 .venv/
-dist/
-__pycache__/
-*.pyc
-build
-env/
 venv/
+env/
 ENV/
 
+# Testing / tool caches
+.pytest_cache/
+.ruff_cache/
 
-# Keys
+# Keys & secrets
 *.pem
 *.key
 *.crt
@@ -27,3 +26,9 @@ ENV/
 *.p12
 *.gpg
 *.asc
+
+# Build artifacts
+*.spec
+*.toc
+*.pyz
+*.zip

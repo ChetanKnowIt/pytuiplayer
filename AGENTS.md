@@ -10,7 +10,7 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 
 | File | Role |
 |------|------|
-| `src/pytuiplayer/tui_app.py` | Main App + all widgets + business logic (1225-line monolith) |
+| `src/pytuiplayer/tui_app.py` | Main App + all widgets + business logic (1236-line monolith) |
 | `src/pytuiplayer/mpv_player.py` | Thin wrapper around `python-mpv` |
 | `src/pytuiplayer/station_player.py` | Station list manager |
 | `src/pytuiplayer/stations.json` | Default radio stations |
@@ -19,6 +19,8 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/pytuiplayer/profiling.py` | Performance profiling decorators (@profile, @profile_async) |
 | `src/pytuiplayer/__main__.py` | CLI entrypoint |
 | `src/tests/` | Pytest test suite |
+| `scripts/` | Dev scripts and manual test scripts |
+| `pytuiplayer.spec` | PyInstaller build spec |
 
 ## Architecture
 
@@ -31,8 +33,8 @@ Single `MusicPlayerApp(App)` class in `tui_app.py`. No Screen abstraction — mo
 | Widget | Type | Location |
 |--------|------|----------|
 | `NowPlaying(Static)` | Reactive | `tui_app.py:99` |
-| `ProgressBar(Static)` | Reactive | `tui_app.py:215` |
-| `VolumeIndicator(Static)` | Reactive | `tui_app.py:251` |
+| `ProgressBar(Static)` | Reactive | `tui_app.py:218` |
+| `VolumeIndicator(Static)` | Reactive | `tui_app.py:255` |
 
 ### State Management
 
@@ -90,7 +92,6 @@ No database. File-based:
 
 - Framework: pytest
 - Config: `pytest.ini` (`testpaths = src/tests`)
-- Excluded: Legacy manual scripts in `src/` (`test_mpv.py`, `test_pyradio.py`, `test_raw_mpv.py`, `test_main.py`)
 - Pattern: Inject `FakeMPV` / `FakeMPVPlayer` via `app.mpv = ...`
 - Stub `app.query_one` and `app.update_now_playing` to avoid Textual DOM
 - Use `asyncio.run()` for async methods
@@ -124,8 +125,8 @@ Profiled methods include:
 
 ## Common Pitfalls
 
-1. **`fetch_duration` is module-level**, not a class method. The `@work` decorator expects methods — this is likely broken.
-2. **Two `max_playlist_items` assignments** in `__init__` (lines 295, 297) — the second silently overwrites the first.
+1. **`fetch_duration` is now a proper class method** (`async def fetch_duration(self, item)`) spawned via `self.run_worker(...)` in `load_local_files` — no longer a module-level `@work` function. The old `self.fetch_duration = False` boolean flag is replaced by `self.fetch_duration_eager`.
+2. ~~Two `max_playlist_items` assignments~~ in `__init__` — **fixed**: single assignment from `MAX_PLAYLIST_ITEMS` class constant.
 3. **Silent exception swallowing**: Most methods have bare `try/except: pass` — intentional to keep TUI alive, but makes debugging hard.
 4. **No Screen abstraction**: Mode switching via manual visibility toggling, not Textual's Screen stack.
 5. **`update_now_playing` dual path**: Posts a message AND has direct-assignment fallback — both must work.
