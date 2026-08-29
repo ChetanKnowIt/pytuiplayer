@@ -93,4 +93,15 @@ forward-looking roadmap:
 - Markers are captured as a JSON array for future filtering (e.g. the `network` radio test).
 
 ## Next Step
-Branch complete and green. Optionally merge to `main` if requested (do NOT merge unless asked).
+Branch complete, merged, and pushed. Next feature should start on a fresh branch off updated
+`main` (`git checkout main && git pull && git checkout -b feature/<next-slug>`), using the
+DB-tracked Test Backlog as the prerequisite checklist.
+
+## Merge to main (testsuite/01-update-test-backlog)
+- Feature branch committed at `349a2ce`; merged to `main` with `--no-ff` (merge commit
+  `3877e78`), then pushed (`774c209..3877e78`).
+- Pre-merge gate (on feature branch): `main..origin/main` = 0 unmerged; ruff clean; 53 passed.
+- Post-merge verify (on `main`): ruff clean; 53 passed; `testsuite.db` refreshed (24/24 backlog
+  done); working tree clean.
+- ROADMAP.md now trimmed to forward-looking content; the test inventory + Test Backlog live
+  exclusively in `testsuite.db`. AGENTS.md/README.md updated for future use.
