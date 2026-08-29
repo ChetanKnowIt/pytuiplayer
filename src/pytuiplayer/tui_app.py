@@ -35,6 +35,10 @@ from textual.worker import get_current_worker
 
 from pytuiplayer.mpv_player import MPVPlayer
 from pytuiplayer.station_player import StationPlayer
+from pytuiplayer.logging_config import get_logger, setup_logging
+from pytuiplayer.profiling import profile, profile_async
+
+logger = get_logger("tui_app")
 
 
 #### HELPER METHODS #### 
@@ -332,7 +336,10 @@ class MusicPlayerApp(App):
 
 
 
+    @profile_async
     async def on_mount(self) -> None:
+        setup_logging()
+        logger.info("Application mounted")
         self.title = "Music Player"
         await self.load_stations(self.stations_file)
         # initialize player volume (we keep internal volume handling but hide UI controls)
@@ -402,6 +409,7 @@ class MusicPlayerApp(App):
         except Exception:
             return
 
+    @profile
     def action_volume_up(self):
         self.volume = min(100, getattr(self, "volume", 50) + 5)
         if self.muted:
@@ -412,6 +420,7 @@ class MusicPlayerApp(App):
             pass
         self.update_volume_ui()
 
+    @profile
     def action_volume_down(self):
         self.volume = max(0, getattr(self, "volume", 50) - 5)
         if self.volume == 0:
@@ -424,6 +433,7 @@ class MusicPlayerApp(App):
             pass
         self.update_volume_ui()
 
+    @profile
     def action_toggle_mute(self):
         if not getattr(self, "muted", False):
             self._prev_volume = getattr(self, "volume", 50)
@@ -460,6 +470,7 @@ class MusicPlayerApp(App):
     #         item.data = station
     #         await station_list.mount(item)
 
+    @profile_async
     async def on_radio_set_changed(self, event):
         radio = event.pressed.id == "radio-option"
         new_mode = "radio" if radio else "local"
@@ -517,6 +528,7 @@ class MusicPlayerApp(App):
             await self.load_local_files(Path.home())
 
 
+    @profile_async
     async def load_local_files(self, path: Path):
         local_list = self.query_one("#local-list", ListView)
         local_list.index = None        # 🔑 prevent index tracking
@@ -541,6 +553,7 @@ class MusicPlayerApp(App):
     # ----------------------------------------------------------------------
     # The fast async loader
     # ----------------------------------------------------------------------
+    @profile_async
     async def load_m3u(self, path: Path):
         """
         Load a local M3U playlist into ``#local-list`` in batches.
@@ -630,6 +643,7 @@ class MusicPlayerApp(App):
                 "meta": label,
                 "duration": duration,
             }
+            item._meta_label = label
 
             batch.append(item)
             count += 1
@@ -695,6 +709,7 @@ class MusicPlayerApp(App):
                     pass
 
 
+    @profile_async
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
         if button_id == "play":
@@ -708,6 +723,7 @@ class MusicPlayerApp(App):
             self.update_now_playing("Nothing playing", "", "⏹")
 
 
+    @profile_async
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         list_id = event.list_view.id
         item = event.item
@@ -756,6 +772,7 @@ class MusicPlayerApp(App):
     # ──────────────────────────────────────────────────────────────────────
     # 2️⃣  The actual event handler (clean, async‑friendly, easy to test)
     # ──────────────────────────────────────────────────────────────────────
+    @profile_async
     async def on_directory_tree_file_selected(
         self,
         event: DirectoryTree.FileSelected,
@@ -853,7 +870,19 @@ class MusicPlayerApp(App):
 
         # (optional) give the user some feedback
         self.notify(f"✅ Loaded {len(self.stations.stations)} stations")
+
+    async def load_stations_ui(self) -> None:
+        """Populate the station ListView from the current ``self.stations`` object."""
+        if not self.stations:
+            return
+        station_list = self.query_one("#station-list", ListView)
+        station_list.clear()
+        for idx, station in enumerate(self.stations.stations):
+            item = ListItem(Label(f"{idx}: {station['name']}"))
+            item.data = station
+            await station_list.mount(item)
             
+    @profile
     def update_now_playing(self, title: str, source: str, state: str):
         # Keep internal state even if the NowPlaying widget is not available.
         # Do not overwrite an existing title with an empty string — preserve
@@ -929,6 +958,7 @@ class MusicPlayerApp(App):
             text = await f.read()
             return json.loads(text)
 
+    @profile
     def update_progress(self):
         try:
             pos = self.mpv.get_time_pos()
@@ -968,6 +998,7 @@ class MusicPlayerApp(App):
         except Exception:
             pass
 
+    @profile
     def action_toggle_play(self):
         if self.mpv.is_paused():
             self.mpv.unpause()
@@ -980,6 +1011,7 @@ class MusicPlayerApp(App):
                 self.current_title, self.option_mode, "⏸"
             )
 
+    @profile
     def action_play(self):
         """Explicit play command (bound to 'p')."""
         try:
@@ -988,6 +1020,7 @@ class MusicPlayerApp(App):
             pass
         self.update_now_playing(self.current_title, self.option_mode, "▶")
 
+    @profile
     def action_pause(self):
         """Explicit pause command (bound to 'k')."""
         try:
@@ -996,6 +1029,7 @@ class MusicPlayerApp(App):
             pass
         self.update_now_playing(self.current_title, self.option_mode, "⏸")
 
+    @profile
     def action_stop(self):
         self.mpv.stop()
         self.current_title = "Nothing playing"
@@ -1006,9 +1040,11 @@ class MusicPlayerApp(App):
 
         self.update_now_playing("Nothing playing", "", "⏹")
 
+    @profile
     def action_seek_forward(self):
         self.mpv.seek(5)
 
+    @profile
     def action_seek_backward(self):
         self.mpv.seek(-5)
 
@@ -1039,7 +1075,9 @@ class MusicPlayerApp(App):
     def action_seek_to_90(self):
         self._seek_to_percent(0.90)
 
+    @profile_async
     async def play_station(self, station, idx):
+        logger.debug("Playing station %d: %s", idx, station.get("name", "unknown"))
         self.stations.play(idx)
         self.currently_playing = "radio"
         # show station name until stream metadata arrives
@@ -1051,6 +1089,7 @@ class MusicPlayerApp(App):
         list_view = self.query_one("#station-list", ListView)
         list_view.index = idx
 
+    @profile
     def play_local(self, path):
         """Play a local file or URL.
 
