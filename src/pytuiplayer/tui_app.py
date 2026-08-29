@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import traceback
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -112,7 +113,6 @@ class NowPlaying(Static):
         except Exception as e:
             # Log error for debugging instead of silently failing
             if os.getenv("PYTUIP_DEBUG"):
-                import traceback
                 print(f"[PYTUIP ERROR] on_now_playing_message failed: {e}")
                 traceback.print_exc()
     def _fmt_mmss(self, seconds: float | None) -> str:
@@ -721,8 +721,6 @@ class MusicPlayerApp(App):
         (``http(s)://`` / ``rtmp://`` / ``ftp://``) sources.  Radio URLs are
         skipped because their duration cannot be read from a local tag.
         """
-        from mutagen import File as MutagenFile  # heavy import – only needed here
-
         for item in list_view.children:               # ListItem objects
             data = getattr(item, "data", None)
             if not isinstance(data, dict):
@@ -791,11 +789,6 @@ class MusicPlayerApp(App):
                     self.play_local(file_path)
                 else:
                     self.play_local(file_path)
-
-    import asyncio
-    from pathlib import Path
-
-    from textual.widgets import DirectoryTree
 
     # ──────────────────────────────────────────────────────────────────────
     # 1️⃣  Small helpers – keep them inside the class or in a utils module
@@ -877,7 +870,6 @@ class MusicPlayerApp(App):
 
         except Exception as exc:                     # catch *any* unexpected error
             # Log the traceback for developers (optional)
-            import traceback
             traceback.print_exc()
             # Show a user‑friendly message
             self.notify(f"❌ Error: {type(exc).__name__}", severity="error")
@@ -944,7 +936,6 @@ class MusicPlayerApp(App):
         # optional debug logging to trace why UI may clear the title
         if os.getenv("PYTUIP_DEBUG"):
             try:
-                import traceback
                 print("[PYTUIP DEBUG] update_now_playing called:", title, source, state)
                 traceback.print_stack(limit=3)
             except Exception:
@@ -1217,7 +1208,6 @@ class MusicPlayerApp(App):
             title = meta_label
         else:
             try:
-                from mutagen import File as MutagenFile
                 info = MutagenFile(str(source_path), easy=True)
                 album = None
                 track = None

@@ -333,11 +333,10 @@ def test_play_local_uses_mutagen_tags_if_available(monkeypatch: MonkeyPatch):
     app.mpv = FakeMPV()
     app.update_now_playing = lambda *a, **k: None
 
-    # inject a fake mutagen.File that returns dict-like metadata
-    import sys
-    import types
-    fake_mutagen = types.SimpleNamespace(File=lambda *a, **k: {"album": ["MyAlbum"], "title": ["MyTitle"]})
-    monkeypatch.setitem(sys.modules, 'mutagen', fake_mutagen)
+    # The app uses the module-level MutagenFile binding; patch it there.
+    def fake_mutagen_file(*a, **k):
+        return {"album": ["MyAlbum"], "title": ["MyTitle"]}
+    monkeypatch.setattr("pytuiplayer.tui_app.MutagenFile", fake_mutagen_file)
 
     p = Path("/tmp/tagged.mp3")
     app.play_local(p)
@@ -577,11 +576,10 @@ def test_populate_missing_durations_handles_local_path_source(tmp_path: Path, mo
     app.update_now_playing = lambda *a, **k: None
     app.call_from_thread = lambda fn, *a: fn(*a)
 
-    # Fake mutagen returning a duration
-    fake_mutagen = types.SimpleNamespace(
-        File=lambda *a, **k: types.SimpleNamespace(info=types.SimpleNamespace(length=95.0))
-    )
-    monkeypatch.setitem(__import__("sys").modules, "mutagen", fake_mutagen)
+    # The app uses the module-level MutagenFile binding; patch it there.
+    def fake_mutagen_file(*a, **k):
+        return types.SimpleNamespace(info=types.SimpleNamespace(length=95.0))
+    monkeypatch.setattr("pytuiplayer.tui_app.MutagenFile", fake_mutagen_file)
 
     from textual.widgets import Label, ListItem
 

@@ -57,6 +57,18 @@ Awaiting task assignment from user. Suggested: extract in-method imports to modu
 - 31 passed in ~9.2s; ruff: All checks passed.
 - Manual: `uv run pytuiplayer` renders the full TUI; `uv run python scripts/run_tui_app_demo.py` prints SUCCESS.
 
+## Completed (import cleanup — Design Flaw #7 / High Priority #4)
+- Removed redundant in-method / class-body imports in `tui_app.py`; hoisted the one genuine stdlib import to module top.
+- `import traceback` moved to module top (line 4); deleted the 3 local `import traceback` sites (on_now_playing_message, on_directory_tree_file_selected, update_now_playing).
+- Deleted two in-method `from mutagen import File as MutagenFile` (in `_populate_missing_durations` and `play_local`) — `MutagenFile` is already bound at module top (line 15), so these were redundant (and the "heavy import" comment was stale/misleading).
+- Deleted the floating class-body imports `import asyncio` / `from pathlib import Path` / `from textual.widgets import DirectoryTree` (had sat at class scope, indented under the class) — all three were already imported at module top, so they were duplicate no-ops.
+- The only remaining in-method import is `import aiofiles` inside a module-top `try/except`, which is correct (optional dependency guard).
+- Test impact: two tests patched `sys.modules['mutagen']` to fake tags; since the functions now use the module-level `MutagenFile` binding, those patches no longer applied and 2 tests failed. Updated `test_play_local_uses_mutagen_tags_if_available` and `test_populate_missing_durations_handles_local_path_source` to `monkeypatch.setattr("pytuiplayer.tui_app.MutagenFile", ...)` (the same approach `test_fetch_duration_method_updates_item_data` already used), and converted the lambdas to `def` to satisfy ruff E731.
+
+## Tests (import cleanup)
+- 31 passed in ~8.7s; ruff: All checks passed.
+- ROADMAP Design Flaw #7 marked ✅ Fixed.
+
 ## Completed (this follow-up session)
 ### Radio integration test promoted into the pytest suite
 - Converted `scripts/run_radio_demo.py` into a real pytest test: `src/tests/test_radio_integration.py::test_radio_starts_stream_and_updates_now_playing`.
