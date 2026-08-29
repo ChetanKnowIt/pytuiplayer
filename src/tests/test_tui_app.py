@@ -1,6 +1,8 @@
-from pytest import MonkeyPatch
-from pytuiplayer.tui_app import MusicPlayerApp
 from pathlib import Path
+
+from pytest import MonkeyPatch
+
+from pytuiplayer.tui_app import MusicPlayerApp
 
 
 class FakeMPVPlayer:
@@ -51,8 +53,9 @@ def test_tui_toggle_play_and_stop():
 
 
 def test_load_stations_ui_updates_list():
-    from pytuiplayer.station_player import StationPlayer
     import asyncio
+
+    from pytuiplayer.station_player import StationPlayer
 
     app = MusicPlayerApp()
     app.mpv = FakeMPVPlayer()
@@ -74,7 +77,7 @@ def test_load_stations_ui_updates_list():
     asyncio.run(app.load_stations_ui())
 
     assert len(fake.items) == 2
-    assert getattr(fake.items[0], "data")["name"] == "One"
+    assert fake.items[0].data["name"] == "One"
 
 
 def test_progressbar_unknown_duration():
@@ -186,7 +189,8 @@ def test_explicit_play_and_pause():
 
 
 def test_visibility_toggle_hides_unused_widgets():
-    import types, asyncio
+    import asyncio
+    import types
 
     app = MusicPlayerApp()
     # fake widgets to capture display/visible/disabled changes
@@ -237,7 +241,7 @@ def test_visibility_toggle_hides_unused_widgets():
 
 
 def test_progressbar_shows_radio_meta_when_streaming():
-    from pytuiplayer.tui_app import ProgressBar, NowPlaying
+    from pytuiplayer.tui_app import NowPlaying, ProgressBar
 
     app = MusicPlayerApp()
     class FakePlayer:
@@ -296,7 +300,8 @@ def test_play_local_calls_mpv_and_sets_title():
 
 
 def test_directory_tree_selection_plays_file_when_local():
-    import types, asyncio
+    import asyncio
+    import types
 
     app = MusicPlayerApp()
 
@@ -328,10 +333,10 @@ def test_play_local_uses_mutagen_tags_if_available(monkeypatch: MonkeyPatch):
     app.mpv = FakeMPV()
     app.update_now_playing = lambda *a, **k: None
 
-    # inject a fake mutagen.File that returns dict-like metadata
-    import sys, types
-    fake_mutagen = types.SimpleNamespace(File=lambda *a, **k: {"album": ["MyAlbum"], "title": ["MyTitle"]})
-    monkeypatch.setitem(sys.modules, 'mutagen', fake_mutagen)
+    # The app uses the module-level MutagenFile binding; patch it there.
+    def fake_mutagen_file(*a, **k):
+        return {"album": ["MyAlbum"], "title": ["MyTitle"]}
+    monkeypatch.setattr("pytuiplayer.tui_app.MutagenFile", fake_mutagen_file)
 
     p = Path("/tmp/tagged.mp3")
     app.play_local(p)
@@ -361,8 +366,8 @@ song2.mp3
             self.items = []
         def clear(self):
             self.items.clear()
-        async def mount(self, item):
-            self.items.append(item)
+        async def mount(self, *items):
+            self.items.extend(items)
 
     fake = FakeList()
     app.query_one = lambda *a, **k: fake
@@ -372,10 +377,10 @@ song2.mp3
 
     assert len(fake.items) == 2
     # loader now stores a dict with source and meta without resolving paths
-    assert isinstance(getattr(fake.items[0], 'data'), dict)
-    assert getattr(fake.items[0], 'data')['source'].endswith('song1.mp3')
+    assert isinstance(fake.items[0].data, dict)
+    assert fake.items[0].data['source'].endswith('song1.mp3')
     # our loader adds a `_meta_label` attribute to help testing/inspection
-    assert getattr(fake.items[0], '_meta_label') == 'Artist A - Title A'
+    assert fake.items[0]._meta_label == 'Artist A - Title A'
 
 
 def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: MonkeyPatch):
@@ -398,8 +403,8 @@ def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: Mo
             self.items = []
         def clear(self):
             self.items.clear()
-        async def mount(self, item):
-            self.items.append(item)
+        async def mount(self, *items):
+            self.items.extend(items)
 
     fake = FakeList()
     app.query_one = lambda *a, **k: fake
@@ -425,7 +430,8 @@ def test_playlist_item_uses_extinf_metadata_on_play():
     """Selecting a playlist item created by `load_m3u` should use the
     playlist `#EXTINF` metadata as the displayed `current_title` when played.
     """
-    import types, asyncio
+    import asyncio
+    import types
 
     app = MusicPlayerApp()
 
@@ -440,7 +446,7 @@ def test_playlist_item_uses_extinf_metadata_on_play():
     app.option_mode = "local"
 
     # Create a fake list item as load_m3u now produces: {source, meta}
-    from textual.widgets import ListItem, Label
+    from textual.widgets import Label, ListItem
     item = ListItem(Label("song.mp3"))
     item.data = {"source": "/tmp/song.mp3", "meta": "Artist X - Track Y"}
 
@@ -466,7 +472,7 @@ def test_play_playlist_starts_first_item():
     app.mpv = FakeMPV()
     app.update_now_playing = lambda *a, **k: None
 
-    from textual.widgets import ListItem, Label
+    from textual.widgets import Label, ListItem
     item = ListItem(Label("song.mp3"))
     item.data = {"source": "/tmp/first.mp3", "meta": "First - Song"}
 
@@ -481,3 +487,122 @@ def test_play_playlist_starts_first_item():
 
     assert app.mpv.last == "/tmp/first.mp3"
     assert app.current_title == "First - Song"
+
+
+def test_fetch_duration_method_updates_item_data(tmp_path: Path, monkeypatch: MonkeyPatch):
+    """fetch_duration reads the file tag and stores the duration in
+    ``item.data['duration']`` plus refreshes the visible label."""
+    import asyncio
+    import types
+
+    app = MusicPlayerApp()
+
+    # fetch_duration uses the module-level MutagenFile binding, so patch it there
+    monkeypatch.setattr(
+        "pytuiplayer.tui_app.MutagenFile",
+        lambda *a, **k: types.SimpleNamespace(info=types.SimpleNamespace(length=137.0)),
+    )
+
+    # call_from_thread must run synchronously in unit tests
+    app.call_from_thread = lambda fn, *a: fn(*a)
+
+    from textual.widgets import Label, ListItem
+
+    file = tmp_path / "song.mp3"
+    file.write_text("")  # exists on disk
+    label = Label("song.mp3")
+    item = ListItem(label)
+    item.data = {"source": file, "title": "song.mp3", "duration": None}
+    # In a live app the Label is mounted; here stub query_one to return it
+    item.query_one = lambda *a, **k: label
+
+    asyncio.run(app.fetch_duration(item))
+
+    assert item.data["duration"] == 137
+    # The visible label is updated via call_from_thread -> label.update(...)
+    assert "02:17" in str(item.query_one(Label).render())
+
+
+def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: MonkeyPatch):
+    """Regression: load_local_files must call the fetch_duration worker method,
+    NOT a boolean flag. With the old bug (self.fetch_duration=False) this raised
+    'bool object is not callable'."""
+    import asyncio
+
+    app = MusicPlayerApp()
+    app.update_now_playing = lambda *a, **k: None
+
+    class FakeList:
+        def __init__(self):
+            self.items = []
+        def clear(self):
+            self.items.clear()
+        async def mount(self, *items):
+            self.items.extend(items)
+
+    fake = FakeList()
+
+    # Replace run_worker so we capture the coroutine without a live app loop
+    captured = {}
+    def fake_run_worker(work, *args):
+        captured["work"] = work
+        captured["args"] = args
+        return None
+    app.run_worker = fake_run_worker
+
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_text("")
+    app.query_one = lambda *a, **k: fake
+    app.local_items = {}
+
+    asyncio.run(app.load_local_files(tmp_path))
+
+    # The list must have one item and the duration worker must have been called
+    assert len(fake.items) == 1
+    assert captured.get("work") is not None
+    assert captured["work"].__func__ is app.fetch_duration.__func__
+    assert len(captured.get("args", ())) == 1
+
+
+def test_populate_missing_durations_handles_local_path_source(tmp_path: Path, monkeypatch: MonkeyPatch):
+    """Regression: _populate_missing_durations must handle a `source` that is a
+    Path and a `data` dict with only 'title' (no 'meta'), as produced by
+    load_local_files. The old code called str.startswith on a Path and used
+    item.data['meta'] (KeyError)."""
+    import asyncio
+    import types
+
+    app = MusicPlayerApp()
+    app.update_now_playing = lambda *a, **k: None
+    app.call_from_thread = lambda fn, *a: fn(*a)
+
+    # The app uses the module-level MutagenFile binding; patch it there.
+    def fake_mutagen_file(*a, **k):
+        return types.SimpleNamespace(info=types.SimpleNamespace(length=95.0))
+    monkeypatch.setattr("pytuiplayer.tui_app.MutagenFile", fake_mutagen_file)
+
+    from textual.widgets import Label, ListItem
+
+    file = tmp_path / "local.mp3"
+    file.write_text("")
+    item = ListItem(Label("local.mp3"))
+    item.data = {"source": file, "title": "local.mp3", "duration": None}
+
+    class FakeList:
+        def __init__(self, children):
+            self.children = children
+
+    fake = FakeList([item])
+    app.query_one = lambda *a, **k: fake
+
+    asyncio.run(app._populate_missing_durations(fake))
+
+    assert item.data["duration"] == 95
+
+
+def test_max_playlist_items_single_source_of_truth():
+    """Regression: __init__ must set max_playlist_items exactly once, from the
+    MAX_PLAYLIST_ITEMS class constant (old code silently overrode it with 5000)."""
+    app = MusicPlayerApp()
+    assert app.max_playlist_items == MusicPlayerApp.MAX_PLAYLIST_ITEMS
+    assert app.max_playlist_items == 2000

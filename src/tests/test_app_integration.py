@@ -1,6 +1,6 @@
-import asyncio
+from textual.widgets import Label, ListItem
+
 from pytuiplayer.tui_app import MusicPlayerApp, NowPlaying, ProgressBar
-from textual.widgets import ListItem, Label
 
 
 def test_app_shows_nowplaying_during_play_and_progress():

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+
 class StationPlayer:
     def __init__(self, mpv_player, stations=None):
         self.mpv = mpv_player
@@ -26,7 +27,10 @@ class StationPlayer:
             print(f"[ERROR] Stations file {new_file} not found, keeping previous stations.")
             return False
         except json.JSONDecodeError as exc:
-            print(f"[ERROR] Failed to parse stations file {new_file}: {exc}. Keeping previous stations.")
+            print(
+                f"[ERROR] Failed to parse stations file {new_file}: {exc}. "
+                "Keeping previous stations."
+            )
             return False
 
     def play(self, index: int):
