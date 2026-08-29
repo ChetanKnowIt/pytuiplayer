@@ -59,28 +59,68 @@ SELECT * FROM runs ORDER BY id DESC LIMIT 5;                   -- last runs
 
 ---
 
-## Feature Backlog
+## Feature Plan (branch-organized)
 
-### High Priority
+Open work is grouped into three feature branches. Each branch is developed and tested on
+its own (`feature/NN-slug`), and may merge to `main` only when every test in its plan
+passes (`uv run pytest -q` → green) and `uv run ruff check .` is clean. The test names
+below are the **acceptance criteria** — add them to `src/tests/` (e.g.
+`test_feature_02_design_flows.py`) and mirror them into `testsuite.db` via
+`scripts/update_testsuite_db.py` so the DB tracks each branch's progress.
 
-No open High Priority work remains — the original items (fix `fetch_duration` decorator,
-single `max_playlist_items` source of truth, `_populate_missing_durations` Path handling,
-hoist imports to module top) were completed in the `feature/01-song-duration` merge
-(`6b417cb`). New features should start from a green `testsuite.db` (run `uv run pytest`,
-confirm 0 failed) and add their tests to the backlog before implementation. See Medium/Low
-Priority for upcoming features.
+### feature/02-fix-design-flows
+Closes Design Flaws #4, #5, #6, #8, #10 and Refactoring Candidates #1–#5.
+Structural debt: Screen abstraction, single now-playing update path, unified `item.data`
+shape, structured error handling, responsive progress bar, and a code split (widgets /
+handlers / loaders → modules; `utils.py`; `constants.py`; TypedDict for `item.data`).
 
-### Medium Priority
+**Tests required to mark Done (all must pass):**
+- `test_radio_local_use_screens_not_visibility_toggle` — mode switch mounts
+  `RadioScreen`/`LocalScreen` and hides the other; no manual `display`/`disabled`
+  toggling remains in `on_radio_set_changed`.
+- `test_update_now_playing_single_path` — `update_now_playing` updates the widget only
+  via `NowPlayingMessage`; the direct-assignment fallback is removed and
+  `on_now_playing_message` is the single handler.
+- `test_item_data_unified_typeddict` — `load_local_files`, `load_m3u`, and radio
+  selection all emit `ItemData(source, title, duration, meta)`; consumers no longer
+  need `isinstance` guards on shape.
+- `test_no_silent_exceptions` — bare `except: pass` replaced with
+  `logger.warning`/`logger.exception`; assert expected errors are logged, not swallowed.
+- `test_progressbar_uses_widget_width` — bar length derives from `self.size.width`
+  (minus padding), not a hardcoded 160.
+- `test_code_split_regression` — after extracting modules, all prior tests still pass
+  (behavior unchanged).
 
-1. Add recursive directory scanning — `load_local_files` should walk subdirs
-2. Add local file metadata polling — show tags during playback
-3. Make ProgressBar responsive — use widget size instead of hardcoded 160
-4. Add Screen abstraction — separate RadioScreen and LocalScreen
-5. Add playlist playback keyboard binding — e.g. `Enter` to play playlist
-6. Unify `item.data` shape — standardize on `{"source", "title", "duration", "meta"}`
+### feature/03-fix-missing-features
+Closes Missing Features / Gaps #11, #12, #13.
+Functional gaps: local-file metadata, robust playlist item access, playlist keyboard binding.
 
-### Low Priority
+**Tests required to mark Done (all must pass):**
+- `test_local_metadata_polling_updates_title` — `_refresh_metadata` reads mutagen tags
+  for local files and updates `current_title` / `NowPlaying` (patch
+  `pytuiplayer.tui_app.MutagenFile`).
+- `test_action_play_playlist_resolves_item` — `action_play_playlist` resolves the item
+  via `item.data` when present, else `children`, with no `AttributeError` from ListView
+  lacking `items`.
+- `test_playlist_keyboard_binding_plays` — a binding (e.g. `enter`/`o`) triggers
+  `action_play_playlist`; assert mpv is called with the first playlist item.
 
+### feature/04-update-medium-priority
+Closes Medium Priority #1 (recursive directory scanning) and any medium items not already
+delivered by 02/03.
+Note: Medium #2 (local metadata), #3 (responsive bar), #4 (Screen abstraction), #5
+(playlist binding), #6 (unify `item.data`) are delivered by feature/02/03 above, so this
+branch owns the remaining net-new medium features — starting with recursive scan.
+
+**Tests required to mark Done (all must pass):**
+- `test_load_local_files_recursive` — `load_local_files` walks subdirectories (build a
+  temp tree with nested `.mp3`s); all appear in the local list and respect
+  `max_playlist_items` + batched mounting.
+- Follow-up medium items (playlist search/filter, station favorites, playback history,
+  shuffle/repeat, configurable bindings, playlist export, album art) will be appended here
+  or split into their own `feature/0N-*` branches as they are scheduled.
+
+### Low Priority (unscheduled — revisit after 02–04)
 1. Add playlist search/filter — type to filter local list
 2. Add station favorites — bookmark frequently played stations
 3. Add playback history — track recently played items
