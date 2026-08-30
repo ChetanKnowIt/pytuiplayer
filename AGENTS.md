@@ -34,7 +34,11 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `scripts/` | Dev scripts and manual test scripts |
 | `scripts/update_testsuite_db.py` | Rebuild/enrich `testsuite.db` (files + backlog mirror) |
 | `scripts/report_testsuite_db.py` | Print the test inventory / backlog / runs |
-| `pytuiplayer.spec` | PyInstaller build spec |
+| `pytuiplayer.spec` | PyInstaller build spec (legacy, `*.spec`-gitignored; superseded by build script) |
+| `scripts/build_pyinstaller.py` | One-file PyInstaller build script (committed; `--collect-all` textual/mpv + data files) |
+| `Makefile` | Local build pipeline: `make test` / `make lint` / `make build` / `make build-exe` / `make dist` |
+| `.github/workflows/ci.yml` | CI gate: `ruff check` + `pytest` on push/PR to `main` |
+| `.github/workflows/build.yml` | CD: on `v*` tag builds wheel/sdist + one-file binaries (Linux/macOS/Windows), drafts release |
 
 ## Architecture
 
@@ -197,6 +201,24 @@ Ruff configured in `pyproject.toml`:
 - Target: py312
 - Rules: E, F, I, UP, B
 - Fix on save enabled
+
+## Packaging & Distribution
+
+The app ships pure-Python (wheel + sdist) plus a one-file PyInstaller binary.
+
+- **Build backend:** `uv_build` (`pyproject.toml`). `uv build` produces
+  `dist/pytuiplayer-<ver>-py3-none-any.whl` + `.tar.gz`. Data files (`stations.json`,
+  `musicplayer_tui.css`) are loaded via `Path(__file__).parent` and ARE included in the
+  wheel (verified) — the console script `pytuiplayer:main` and `python -m pytuiplayer` both work.
+- **Standalone binary:** `uv run python scripts/build_pyinstaller.py` (`--onefile`,
+  `--collect-all textual --collect-all mpv`, bundles `stations.json` + `musicplayer_tui.css` into
+  the package dir so the runtime path resolves). Output: `dist/pytuiplayer` (`.exe` on Windows).
+- **Runtime requirement:** `python-mpv` loads the system `libmpv` at runtime via ctypes — it is
+  NOT bundled. The target machine MUST have `mpv` installed and on PATH, on both build and run hosts.
+- **Local pipeline:** `Makefile` wraps it (`make test`/`make lint`/`make build`/`make build-exe`/`make dist`).
+- **CI/CD:** `.github/workflows/ci.yml` (ruff + pytest gate on `main` PRs) and
+  `.github/workflows/build.yml` (on `v*` tag: wheel/sdist + per-OS one-file binaries, draft release).
+- **Version:** bump `version` in `pyproject.toml` before tagging a release.
 
 ## Commit Message Convention
 

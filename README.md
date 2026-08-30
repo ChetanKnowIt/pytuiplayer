@@ -121,7 +121,7 @@ Use this quick checklist to manually verify the core behaviors of the TUI and to
 
 * Run automated tests:
   - Command: `uv run pytest -q`
-  - Expected: **102 passed** (includes 1 `network`-marked radio integration test that auto-skips offline; every run also refreshes `testsuite.db`). The live count is the source of truth — re-run `uv run pytest -q` rather than trusting a hardcoded number.
+  - Expected: **147 passed** (includes 1 `network`-marked radio integration test that auto-skips offline; every run also refreshes `testsuite.db`). The live count is the source of truth — re-run `uv run pytest -q` rather than trusting a hardcoded number.
 
 * Manual UI checks (run from project root):
   1. Start the app: `uv run pytuiplayer`
@@ -147,4 +147,46 @@ Use this quick checklist to manually verify the core behaviors of the TUI and to
   - If `Now Playing` does not show a title persistently, run with debug tracing:
     - Linux/macOS: `PYTUIP_DEBUG=1 uv run pytuiplayer` and reproduce; look for lines prefixed with `[PYTUIP DEBUG] update_now_playing called:`.
   - If radio metadata does not appear, ensure `mpv` supports ICY/media metadata for the stream and check the mpv logs printed to stdout.
+
+## Packaging & Distribution
+
+`pytuiplayer` can be installed/run from source or packaged into a standalone
+executable.
+
+### Install from source
+```bash
+git clone <repository-url>
+cd pytuiplayer
+uv sync --dev
+uv run pytuiplayer
+```
+
+### Build a wheel / sdist
+```bash
+uv build            # produces dist/pytuiplayer-<version>-py3-none-any.whl + .tar.gz
+pip install dist/*.whl
+pytuiplayer
+```
+
+### Build a standalone executable (one-file)
+Requires `mpv` installed on the **build** machine and on the **target** machine
+(`python-mpv` loads the system `libmpv` shared library at runtime — it is not
+bundled):
+```bash
+uv sync --dev
+uv run python scripts/build_pyinstaller.py   # -> dist/pytuiplayer (or .exe on Windows)
+./dist/pytuiplayer
+```
+
+### CI / CD
+- `.github/workflows/ci.yml` — runs `ruff check` + `pytest` on every push/PR to
+  `main` (the merge gate).
+- `.github/workflows/build.yml` — on a `v*` tag (or manual dispatch) builds the
+  wheel + sdist and one-file binaries for Linux / macOS / Windows, then drafts a
+  GitHub release with all artifacts attached.
+
+> Note: the bundled `pytuiplayer.spec` is the old PyInstaller spec (superseded by
+> `scripts/build_pyinstaller.py`); it is `*.spec`-gitignored and retained for reference only.
+
+### Troubleshooting (UI)
   - If the UI looks off, edit `src/pytuiplayer/musicplayer_tui.css` and use `textual run --dev` style live edits where applicable.
