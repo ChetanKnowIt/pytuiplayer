@@ -9,6 +9,7 @@ import json
 import os
 import traceback
 from collections.abc import AsyncIterator
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -252,22 +253,67 @@ class MusicPlayerApp(App):
 
     @profile_async
     async def load_local_files(self, path: Path):
+        """Load all local MP3 files under ``path`` (recursively) into ``#local-list``.
+
+        * Walks ``path`` recursively, so nested music folders are included.
+        * Mounts items in batches (``self.playlist_batch_size``) and yields to the event
+          loop between batches to keep the UI responsive.
+        * Honors ``self.max_playlist_items`` — stops once the cap is reached.
+        * Launches a background ``fetch_duration`` worker per file (like before).
+        """
         local_list = self.query_one("#local-list", ListView)
         local_list.index = None  # prevent index tracking
         local_list.clear()
         self.local_items = {}  # keep a mapping for easy update
 
-        for file in path.iterdir():
-            if file.suffix.lower() != ".mp3":
+        max_items = self.max_playlist_items or float("inf")
+        batch_size = self.playlist_batch_size
+        batch: list = []
+        count = 0
+
+        for root, _dirs, files in os.walk(path):
+            for name in sorted(files):
+                if not name.lower().endswith(".mp3"):
+                    continue
+
+                file = Path(root) / name
+                item = ListItem(Label(f"{file.name:<40} --:--"))
+                item.data = ItemData(source=file, title=file.name, duration=None)
+                batch.append(item)
+                self.local_items[file] = item
+                count += 1
+
+                if len(batch) >= batch_size:
+                    await local_list.mount(*batch)
+                    batch.clear()
+                    await asyncio.sleep(0)  # yield to the event loop
+
+                if count >= max_items:
+                    # Flush any remaining batched items before stopping.
+                    if batch:
+                        await local_list.mount(*batch)
+                        batch.clear()
+                    break
+            else:
                 continue
+            break  # inner max_items hit — stop walking entirely
 
-            item = ListItem(Label(f"{file.name:<40} --:--"))
-            item.data = ItemData(source=file, title=file.name, duration=None)
-            await local_list.mount(item)
-            self.local_items[file] = item
+        # Flush any remaining batched items.
+        if batch:
+            await local_list.mount(*batch)
+            batch.clear()
 
-            # Fire-and-forget: fetch duration in background (Textual worker)
-            self.run_worker(self.fetch_duration, item)
+        # Fire-and-forget: fetch duration in background for each loaded item (Textual worker).
+        # NOTE: Textual's run_worker(work, name, ...) treats the 2nd positional as the
+        # worker *name*, NOT an arg to `work`. Bind `item` via partial so fetch_duration
+        # actually receives it. `exit_on_error=False` keeps the TUI alive if a tag read
+        # fails (defensive: don't crash the app over a missing duration).
+        for idx, item in enumerate(self.local_items.values()):
+            self.run_worker(
+                partial(self.fetch_duration, item),
+                name=f"fetch_duration:{idx}",
+                exit_on_error=False,
+            )
 
     @profile_async
     async def load_m3u(self, path: Path):

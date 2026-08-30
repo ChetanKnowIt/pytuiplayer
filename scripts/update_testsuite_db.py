@@ -51,6 +51,8 @@ FILE_DESCRIPTIONS = {
     "src/tests/test_feature_02_design_flows.py": "feature/02 acceptance tests (design flows).",
     "src/tests/test_feature_03_missing_features.py":
         "feature/03: local metadata, playlist action+binding, M3U radio fix, real-list dataset.",
+    "src/tests/test_feature_04_medium_priority.py":
+        "feature/04 acceptance tests (recursive local-file scanning).",
 }
 
 # ---------------------------------------------------------------------------
@@ -142,6 +144,22 @@ BACKLOG = [
     ("test_real_radio_m3u_entries_play_as_streams", "integration",
      "Selecting a real list entry plays as a stream labeled Radio", "done",
      "M3U radio bug"),
+    # feature/04 — Medium Priority #1: recursive directory scanning
+    ("test_load_local_files_recursive", "unit",
+     "load_local_files walks subdirectories; nested .mp3s appear", "done",
+     "Medium #1"),
+    ("test_load_local_files_recursive_respects_max_playlist_items", "unit",
+     "nested tree capped at max_playlist_items", "done",
+     "Medium #1"),
+    ("test_load_local_files_recursive_batched_mounting", "unit",
+     "items mounted in playlist_batch_size batches", "done",
+     "Medium #1"),
+    ("test_load_local_files_top_level_still_works", "unit",
+     "flat directory still behaves as before", "done",
+     "Medium #1"),
+    ("test_switch_to_local_does_not_crash_on_fetch_duration_worker", "unit",
+     "Radio->Local switch does not crash fetch_duration worker", "done",
+     "Medium #1"),
 ]
 
 

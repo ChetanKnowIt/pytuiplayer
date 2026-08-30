@@ -6,7 +6,7 @@
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 9 | `load_local_files` only scans top-level directory — no recursive scan | `tui_app.py:532-548` | Nested music folders not supported (owned by feature/04) |
+| 9 | _Closed by feature/04._ `load_local_files` now uses `os.walk` for recursive scan. | `tui_app.py:254-305` | Nested music folders now supported |
 
 ---
 
@@ -53,20 +53,19 @@ below are the **acceptance criteria** — add them to `src/tests/` (e.g.
 `test_feature_0N_*.py`) and mirror them into `testsuite.db` via
 `scripts/update_testsuite_db.py` so the DB tracks each branch's progress.
 
-### feature/04-update-medium-priority
-Closes Medium Priority #1 (recursive directory scanning) and any medium items not already
-delivered.
-Note: Medium #2 (local metadata), #3 (responsive bar), #4 (Screen abstraction), #5
-(playlist binding), #6 (unify `item.data`) are delivered by feature/02/03, so this
-branch owns the remaining net-new medium features — starting with recursive scan.
+### feature/04-update-medium-priority — **DONE** (branch `feature/04-update-medium-priority`)
+Closes Medium Priority #1 (recursive directory scanning); remaining medium items are
+unscheduled follow-ups.
 
-**Tests required to mark Done (all must pass):**
-- `test_load_local_files_recursive` — `load_local_files` walks subdirectories (build a
-  temp tree with nested `.mp3`s); all appear in the local list and respect
-  `max_playlist_items` + batched mounting.
-- Follow-up medium items (playlist search/filter, station favorites, playback history,
-  shuffle/repeat, configurable bindings, playlist export, album art) will be appended here
-  or split into their own `feature/0N-*` branches as they are scheduled.
+**Tests required to mark Done (all pass — 5 tests in `test_feature_04_medium_priority.py`):**
+- ✅ `test_load_local_files_recursive` — `load_local_files` walks subdirectories (temp tree
+  with nested `.mp3`s); all appear in the local list and respect `max_playlist_items` +
+  batched mounting. Supporting: `test_load_local_files_recursive_respects_max_playlist_items`,
+  `test_load_local_files_recursive_batched_mounting`, `test_load_local_files_top_level_still_works`.
+
+Follow-up medium items (playlist search/filter, station favorites, playback history,
+shuffle/repeat, configurable bindings, playlist export, album art) remain unscheduled and
+may be split into their own `feature/0N-*` branches as they are scheduled.
 
 ### Low Priority (unscheduled — revisit after 04)
 1. Add playlist search/filter — type to filter local list
@@ -81,13 +80,19 @@ branch owns the remaining net-new medium features — starting with recursive sc
 
 ## Notes
 
-- Run `uv run pytest -q` before and after changes — expect 76 passed (last run: 2026-08-30 on `main`; feature/03 merged)
+- Run `uv run pytest -q` before and after changes — expect 80 passed (last run: 2026-08-30 on branch `feature/04-update-medium-priority`)
 - Run `uv run ruff check .` for linting
 - All tests use `FakeMPV` injection pattern — maintain this for new tests
 - `PYTUIP_DEBUG=1` enables stack traces on `update_now_playing` calls
 - `PYTUIP_PROFILE=1` enables performance profiling (logs to `pytuiplayer.performance`)
 - `_meta_label` is set on items by `load_m3u` but NOT by `load_local_files`
 - `load_stations_ui()` exists at line 882 — test at line 55 uses it correctly
+- **Pitfall #16 (run_worker arg binding):** Textual's `App.run_worker(work, name="", ...)` takes the
+  worker *name* as its 2nd positional — it does NOT forward extra positionals to `work`. To pass args,
+  bind them: `self.run_worker(functools.partial(self.fetch_duration, item), name=..., exit_on_error=False)`.
+  The old `run_worker(self.fetch_duration, item)` passed `item` as `name`, so `fetch_duration()` ran with
+  no `item` and crashed the TUI (TypeError) when switching Radio→Local. Set `exit_on_error=False` so a
+  tag-read failure can't kill the app.
 
 ### Entry point / launch (fixed)
 - `uv run pytuiplayer` (console script `pytuiplayer = "pytuiplayer:main"`) now launches the real TUI: `pytuiplayer/__init__.py:main` lazily imports `MusicPlayerApp` and calls `.run()`. Previously `__init__.py:main` was a `print("Hello")` stub, so the console script exited without launching the UI. `python -m pytuiplayer` (via `__main__.py`) always worked.
