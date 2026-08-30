@@ -27,6 +27,7 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/tests/testsuite_db.py` | SQLite test-inventory DB helpers (schema + idempotent upserts) |
 | `src/tests/test_backlog_coverage.py` | ROADMAP Test Backlog coverage (22 tests) |
 | `src/tests/test_feature_02_design_flows.py` | feature/02 acceptance tests (6 tests) |
+| `src/tests/test_tui_app.py` | App actions, loaders, visibility, regressions (21 tests) |
 | `scripts/` | Dev scripts and manual test scripts |
 | `scripts/update_testsuite_db.py` | Rebuild/enrich `testsuite.db` (files + backlog mirror) |
 | `scripts/report_testsuite_db.py` | Print the test inventory / backlog / runs |
