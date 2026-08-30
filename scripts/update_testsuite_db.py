@@ -48,6 +48,7 @@ FILE_DESCRIPTIONS = {
     "src/tests/test_tui_app.py": "App actions, loaders, visibility, regressions.",
     "src/tests/test_radio_integration.py": "Live radio stream (network, auto-skips offline).",
     "src/tests/test_backlog_coverage.py": "ROADMAP Test Backlog coverage suite.",
+    "src/tests/test_feature_02_design_flows.py": "feature/02 acceptance tests (design flows).",
 }
 
 # ---------------------------------------------------------------------------

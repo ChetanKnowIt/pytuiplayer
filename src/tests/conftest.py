@@ -35,10 +35,13 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    # Only count the "call" phase to avoid triple-counting setup/call/teardown.
+    if report.when != "call":
+        return
     if report.skipped:
         _RUN_COUNTS["skipped"] += 1
     elif report.failed:
-        _RUN_COUNTS["failed" if report.when == "call" else "error"] += 1
+        _RUN_COUNTS["failed"] += 1
     else:
         _RUN_COUNTS["passed"] += 1
 
