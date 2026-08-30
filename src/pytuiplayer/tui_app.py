@@ -28,6 +28,7 @@ from pytuiplayer.constants import (
     ICON_ERR,
     MAX_PLAYLIST_ITEMS,
 )
+from pytuiplayer.history import HistoryTracker
 from pytuiplayer.logging_config import get_logger, setup_logging
 from pytuiplayer.metadata import MetadataPoller
 from pytuiplayer.mpv_player import MPVPlayer
@@ -60,6 +61,7 @@ class MusicPlayerApp(App):
         Binding("-", "volume_down", description="Volume -"),
         Binding("m", "toggle_mute", description="Mute toggle"),
         Binding("o", "play_playlist", description="Play playlist from start"),
+        Binding("H", "play_history_last", description="Replay last played item"),
         Binding("/", action="focus_search", description="Focus search input"),
     ]
 
@@ -100,6 +102,7 @@ class MusicPlayerApp(App):
         self.metadata_poller = MetadataPoller(self)
         self.playlist_loader = PlaylistLoader(self)
         self.playlist_navigator = PlaylistNavigator(self)
+        self.history_tracker = HistoryTracker(self)
 
     MAX_PLAYLIST_ITEMS = MAX_PLAYLIST_ITEMS
 
@@ -284,6 +287,42 @@ class MusicPlayerApp(App):
             search_input.focus()
         except Exception:
             logger.debug("search-input not available")
+
+    def action_play_history_last(self) -> None:
+        """Replay the most recently played item (bound to H / shift+h)."""
+        entry = self.history_tracker.replay(0)
+        if entry is None:
+            logger.debug("play_history_last: no history")
+            self.update_now_playing("No history yet", "", "⚠")
+            return
+        try:
+            if entry["mode"] == "radio":
+                # Find the station index if still present, else play by URL.
+                station = {"name": entry["title"], "url": entry["source"]}
+                if self.stations and entry["source"] in {
+                    s.get("url") for s in self.stations.stations
+                }:
+                    idx = next(
+                        i for i, s in enumerate(self.stations.stations)
+                        if s.get("url") == entry["source"]
+                    )
+                    asyncio.run(self.play_station(station, idx))
+                else:
+                    # Play the raw URL (station list may have changed).
+                    self.mpv.play(entry["source"])
+                    self.currently_playing = "radio"
+                    self._stream_source = True
+                    self.current_title = entry["title"]
+                    self.update_now_playing(entry["title"], "Radio", "▶")
+            else:
+                self.play_local(entry["source"])
+        except Exception:
+            logger.warning("play_history_last failed", exc_info=True)
+            self.update_now_playing("Failed to replay history", "", "⚠")
+
+    def recent_history(self, n: int | None = None) -> list[dict]:
+        """Thin accessor so tests / UI can read recent history."""
+        return self.history_tracker.recent(n)
 
     # === Mode switching ===
 
@@ -506,6 +545,11 @@ class MusicPlayerApp(App):
         self._stream_source = True
         self.current_title = station["name"]
         self.update_now_playing(station["name"], "Radio", "▶")
+        # Track recently-played item.
+        try:
+            self.history_tracker.record("radio", station["name"], station["url"])
+        except Exception:
+            logger.debug("history_tracker.record failed", exc_info=True)
 
         try:
             list_view = self.query_one("#station-list", ListView)
@@ -547,6 +591,11 @@ class MusicPlayerApp(App):
                 self.update_now_playing(title, "Radio", "▶")
             except Exception:
                 logger.debug("update_now_playing failed", exc_info=True)
+            # Track recently-played item (URL stream).
+            try:
+                self.history_tracker.record("local", title, source_str)
+            except Exception:
+                logger.debug("history_tracker.record failed", exc_info=True)
             return
 
         # treat as local filesystem path
@@ -603,6 +652,11 @@ class MusicPlayerApp(App):
             self.update_now_playing(title, "Local File", "▶")
         except Exception:
             logger.debug("update_now_playing failed", exc_info=True)
+        # Track recently-played item (local file).
+        try:
+            self.history_tracker.record("local", title, source_path or source_str)
+        except Exception:
+            logger.debug("history_tracker.record failed", exc_info=True)
 
     def _resolve_playlist_items(self, local_list) -> list:
         """Resolve a list widget's items robustly."""

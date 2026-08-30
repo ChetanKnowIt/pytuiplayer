@@ -114,9 +114,28 @@ Compacted the layout by merging the separate `ProgressBar` widget into `NowPlayi
 > line because of border + padding). A continued UI-alignment fix (see new branch) raises the height
 > to fit both rows and aligns the `#volume-indicator` inside `#controls`. See `docs/AI_TASK_STATE.md`.
 
+### feature/08-playback-history — **DONE** (branch `feature/08-playback-history`)
+Closes Low Priority #3 (playback history — track recently played items). Adds a `HistoryTracker`
+controller that records every played item (radio station or local file) into an in-memory,
+most-recent-first list, de-dupes consecutive repeats, and caps at `MAX_HISTORY_ITEMS` (200).
+
+**New module:**
+- `history.py` — `HistoryTracker` (`record`, `recent`, `replay`, `clear`) with `@profile` decorators.
+
+**Integration:**
+- `tui_app.py` — `self.history_tracker = HistoryTracker(self)` in `__init__`; `record()` called from
+  `play_station` (radio) and both branches of `play_local` (URL stream + filesystem). New binding
+  `H` (shift+h) → `action_play_history_last()` replays the most recent entry (radio via URL, local via
+  `play_local`). `recent_history(n)` thin accessor for tests/UI.
+- `constants.py` — `MAX_HISTORY_ITEMS = 200`.
+
+**Tests:** 15 tests in `test_feature_08_playback_history.py` (HistoryTracker unit tests + app
+integration: interleaved radio/local ordering, dedup, cap, replay, `H` binding).
+
+**Status:** 117 tests pass (102 + 15), ruff clean, 68/68 backlog done.
+
 ### Low Priority (remaining — unscheduled)
 2. Add station favorites — bookmark frequently played stations
-3. Add playback history — track recently played items
 4. Add shuffle/repeat modes — standard player features
 5. Add configurable keybindings — user-defined bindings
 6. Add playlist export — save current list as M3U
