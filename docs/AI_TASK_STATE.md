@@ -1,7 +1,7 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`feature/07-fix-ui-alignment` — branched off `main` (known-good baseline: 102 tests, ruff clean, 53/53 backlog done).
+`main` — **merged** (merge commit `8dcf82d`, `--no-ff`, pushed). 102 tests pass, ruff clean, 53/53 backlog done.
 
 ## Completed This Session
 
