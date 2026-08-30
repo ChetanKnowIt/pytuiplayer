@@ -55,6 +55,18 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
+      - name: Install mpv (build-time libmpv for PyInstaller analysis)
+        # python-mpv loads the system libmpv via ctypes, so the build host must
+        # have it. NOTE: the produced binary still needs libmpv on the *target*
+        # machine at runtime (it is not bundled).
+        shell: bash
+        run: |
+          case "${{ matrix.os }}" in
+            ubuntu-latest)  sudo apt-get update && sudo apt-get install -y libmpv-dev ;;
+            macos-latest)  brew install mpv ;;
+            windows-latest) choco install mpv -y ;;
+          esac
+
       - name: Install dependencies
         run: uv sync --dev
 

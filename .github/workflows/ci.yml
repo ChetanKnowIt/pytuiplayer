@@ -23,6 +23,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
 
+      - name: Install libmpv (runtime dep for mpv import at test-collection time)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev
+
       - name: Install dependencies
         run: uv sync --dev
 
