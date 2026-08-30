@@ -42,6 +42,8 @@ class NowPlaying(Static):
     _kbps = reactive("320")   # bitrate display
     stream = reactive(False)  # True for live streams (radio) — show metadata, not seek bar
     meta = reactive("")       # stream metadata title
+    shuffle = reactive(False)  # shuffle playback mode on/off
+    repeat = reactive("off")   # repeat mode: "off" | "one" | "all"
 
     MIN_BAR_WIDTH = 20
     MAX_BAR_WIDTH = 160

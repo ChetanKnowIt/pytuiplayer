@@ -62,6 +62,8 @@ class MusicPlayerApp(App):
         Binding("m", "toggle_mute", description="Mute toggle"),
         Binding("o", "play_playlist", description="Play playlist from start"),
         Binding("H", "play_history_last", description="Replay last played item"),
+        Binding("z", "toggle_shuffle", description="Toggle shuffle"),
+        Binding("r", "cycle_repeat", description="Cycle repeat mode"),
         Binding("/", action="focus_search", description="Focus search input"),
     ]
 
@@ -92,6 +94,10 @@ class MusicPlayerApp(App):
         self.playlist_batch_size = DEFAULT_PLAYLIST_BATCH_SIZE
         self.fetch_duration_eager = False
         self.local_items = {}
+
+        # Shuffle / repeat playback modes (Low Priority #4)
+        self.shuffle = False
+        self.repeat = "off"  # "off" | "one" | "all"
 
         # Local-file metadata polling state
         self._current_local_source = None
@@ -323,6 +329,40 @@ class MusicPlayerApp(App):
     def recent_history(self, n: int | None = None) -> list[dict]:
         """Thin accessor so tests / UI can read recent history."""
         return self.history_tracker.recent(n)
+
+    @profile
+    def action_toggle_shuffle(self) -> None:
+        """Toggle shuffle mode (bound to z)."""
+        self.shuffle = not self.shuffle
+        try:
+            now = self.query_one(NowPlaying)
+            now.shuffle = self.shuffle
+        except Exception:
+            logger.debug("NowPlaying not available for shuffle indicator", exc_info=True)
+        try:
+            self.update_now_playing(
+                f"Shuffle {'ON' if self.shuffle else 'OFF'}", "", "🔀"
+            )
+        except Exception:
+            logger.debug("update_now_playing failed in toggle_shuffle", exc_info=True)
+
+    @profile
+    def action_cycle_repeat(self) -> None:
+        """Cycle repeat mode off -> one -> all -> off (bound to r)."""
+        order = ("off", "one", "all")
+        idx = order.index(self.repeat)
+        self.repeat = order[(idx + 1) % len(order)]
+        try:
+            now = self.query_one(NowPlaying)
+            now.repeat = self.repeat
+        except Exception:
+            logger.debug("NowPlaying not available for repeat indicator", exc_info=True)
+        try:
+            self.update_now_playing(
+                f"Repeat: {self.repeat.upper()}", "", "🔁"
+            )
+        except Exception:
+            logger.debug("update_now_playing failed in cycle_repeat", exc_info=True)
 
     # === Mode switching ===
 
