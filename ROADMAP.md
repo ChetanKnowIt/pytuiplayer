@@ -246,3 +246,29 @@ feature build always starts from a green, known-good state:
 > History note: `feature/01-song-duration`, `feature/02-fix-design-flows`, `feature/03-fix-missing-features`,
 > and `feature/04-update-medium-priority` have been merged to `main` and pushed. `main` is the
 > known-good baseline for the next feature branch.
+
+### Release Cadence Policy (discipline)
+
+Features are rolled into the packaged distribution on a fixed cadence, not ad hoc:
+
+- **Release every 3 merged features.** After the 3rd, 6th, 9th, … feature branch is merged
+  to `main`, cut a release: bump `version` in `pyproject.toml`, merge (already done), then
+  tag `v<MAJOR>.<MINOR>.0` on `main` to let `.github/workflows/build.yml` build + publish.
+- **The build pipeline is the packaging path.** `feature/11-build-pipeline` established
+  `Makefile` + `scripts/build_pyinstaller.py` + the CI/release workflows. Releasing = tag a
+  `v*` on `main`; do not hand-build artifacts and attach them manually.
+- **The 3-feature counter is tracked in `docs/RELEASE_CADENCE.md`** — a one-line log of
+  (features-since-last-release → next release number). `scripts/release_cadence.py` prints
+  the current count and whether a release is due, derived from merged `feature/*` branches
+  in git history (sanity check; the log in the doc is authoritative).
+- **Versioning rule:** each cadence release bumps the MINOR version (`0.2.0` → `0.3.0` →
+  `0.4.0` …). Patch bumps (`x.y.1`) are reserved for out-of-cadence hotfixes.
+- **Scope:** `mpv` stays independent of the package — binaries/wheel rely on `mpv` being
+  installed on the target host (python-mpv loads system `libmpv` at runtime). Reaffirmed
+  when feature/11 shipped `v0.2.0`.
+
+**Feature → release ledger (running):**
+- `v0.1.0` — pre-pipeline baseline (manual; no CI).
+- `v0.2.0` — features #3 history, #4 shuffle/repeat, #6 export, #11 build-pipeline
+  (the 4-feature first cut; cadence normalizes to 3 from here). Next release `v0.3.0` is
+  due after 3 more merged feature branches.

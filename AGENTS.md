@@ -219,6 +219,11 @@ The app ships pure-Python (wheel + sdist) plus a one-file PyInstaller binary.
 - **CI/CD:** `.github/workflows/ci.yml` (ruff + pytest gate on `main` PRs) and
   `.github/workflows/build.yml` (on `v*` tag: wheel/sdist + per-OS one-file binaries, draft release).
 - **Version:** bump `version` in `pyproject.toml` before tagging a release.
+- **Release cadence (discipline):** cut a release **every 3 merged features** — bump the
+  MINOR version and tag `v*.*.0` on `main` to let `build.yml` build + publish. Counter +
+  ledger live in `docs/RELEASE_CADENCE.md`; `scripts/release_cadence.py` reports the count and
+  whether a release is due. `mpv` stays independent of the package (target host must have it).
+  See ROADMAP.md "Release Cadence Policy" for the full rule and versioning.
 
 ## Commit Message Convention
 
