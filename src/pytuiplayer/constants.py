@@ -10,6 +10,9 @@ MAX_PLAYLIST_ITEMS = 2000
 # Default batch size for mounting playlist items (keeps UI responsive)
 DEFAULT_PLAYLIST_BATCH_SIZE = 200
 
+# Maximum number of recently-played items to remember in the history tracker
+MAX_HISTORY_ITEMS = 200
+
 # Icon glyphs used by the toast / status helpers
 ICON_OK = "⏺"
 ICON_ERR = "⚠"
