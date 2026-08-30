@@ -21,6 +21,8 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/pytuiplayer/types.py` | ItemData TypedDict |
 | `src/pytuiplayer/mpv_player.py` | Thin wrapper around `python-mpv` |
 | `src/pytuiplayer/station_player.py` | Station list manager |
+| `src/pytuiplayer/history.py` | HistoryTracker — playback history (feature/08) |
+| `src/pytuiplayer/exporter.py` | PlaylistExporter — M3U export (feature/10) |
 | `src/pytuiplayer/stations.json` | Default radio stations |
 | `src/pytuiplayer/musicplayer_tui.css` | Textual CSS theme |
 | `src/pytuiplayer/logging_config.py` | Logging configuration (setup_logging, get_logger) |
@@ -86,6 +88,7 @@ The app follows a thin-orchestrator pattern: `MusicPlayerApp` only routes Textua
 | `MetadataPoller` | `metadata.py` | Stream icy-title + local file tag polling |
 | `PlaylistLoader` | `playlist.py` | Load M3U + local files, fetch durations |
 | `PlaylistNavigator` | `playlist.py` | Prev/next navigation in local/radio lists |
+| `HistoryTracker` | `history.py` | Playback history (records/replays recent items) |
 
 `MusicPlayerApp.__init__` instantiates these controllers. Event handlers call them directly:
 - `action_volume_up()` → `self.volume_controller.action_volume_up()`
@@ -130,6 +133,12 @@ Single file: `musicplayer_tui.css`. Dark theme (`#0b0b0b` background, `#f0e6c8` 
 | `1` / `5` / `9` | Seek to 10% / 50% / 90% |
 | `+` / `-` | Volume up / down |
 | `m` | Toggle mute |
+| `o` | Play playlist from start |
+| `H` | Replay last played item (playback history) |
+| `z` | Toggle shuffle mode |
+| `r` | Cycle repeat mode (off → one → all) |
+| `e` | Export playlist to M3U |
+| `/` | Focus search input (Local mode) |
 
 ### Audio Architecture
 
@@ -160,7 +169,7 @@ every `uv run pytest` run (see `src/tests/testsuite_db.py`). It is not app data.
 - Pattern: Inject `FakeMPV` / `FakeMPVPlayer` via `app.mpv = ...`
 - Stub `app.query_one` and `app.update_now_playing` to avoid Textual DOM
 - Use `asyncio.run()` for async methods (pytest-asyncio is NOT installed)
-- Run: `uv run pytest -q` from repo root (currently **102 passed**; the `network`-marked radio test auto-skips offline). The live count is the source of truth — re-run `uv run pytest -q` rather than trusting a hardcoded number.
+- Run: `uv run pytest -q` from repo root (currently **147 passed**; the `network`-marked radio test auto-skips offline, and is skipped entirely in CI). The live count is the source of truth — re-run `uv run pytest -q` rather than trusting a hardcoded number.
 - Every pytest run also refreshes the SQLite inventory `testsuite.db`; view it with
   `uv run python scripts/report_testsuite_db.py` (rebuild/enrich via
   `scripts/update_testsuite_db.py`). The `network`-marked radio test auto-skips offline.

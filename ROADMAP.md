@@ -70,7 +70,7 @@ into their own modules.
 - `volume.py` — `VolumeController` (volume up/down/mute, widget sync)
 - `metadata.py` — `MetadataPoller` (stream icy-title + local file tag polling)
 - `playlist.py` — `PlaylistLoader` + `PlaylistNavigator` (M3U/local loading + prev/next)
-- `tui_app.py` slimmed from 1072 → 621 lines (42% reduction)
+- `tui_app.py` slimmed from ~1072 → ~621 lines as part of the refactor (feature/05); it has since grown as features #08/#09/#10/#11 were added and is currently **749 lines** — the slimming was the key architectural win, not a fixed ceiling.
 
 **Winamp UI Overhaul:**
 - `widgets.py` — LED-style NowPlaying (position/time/khz/kbps) with integrated seek bar (● marker)
@@ -110,9 +110,7 @@ Compacted the layout by merging the separate `ProgressBar` widget into `NowPlayi
 
 **Status:** 102 tests pass, ruff clean, 53/53 backlog done. `main` is the known-good baseline.
 
-> Follow-up: the `#now-playing` box still clips its 2nd row at `height: 5` (content area is only 1
-> line because of border + padding). A continued UI-alignment fix (see new branch) raises the height
-> to fit both rows and aligns the `#volume-indicator` inside `#controls`. See `docs/AI_TASK_STATE.md`.
+> Follow-up (now RESOLVED): the `#now-playing` box originally clipped its 2nd row at `height: 5`; a later UI-alignment fix raised it to `height: 6` so both rows fit (see Pitfall #19 in the project skill / `docs/AI_TASK_STATE.md`). The `#volume-indicator` is aligned inside `#controls` (`height: 5`).
 
 ### feature/08-playback-history — **DONE** (branch `feature/08-playback-history`)
 Closes Low Priority #3 (playback history — track recently played items). Adds a `HistoryTracker`
@@ -269,6 +267,7 @@ Features are rolled into the packaged distribution on a fixed cadence, not ad ho
 
 **Feature → release ledger (running):**
 - `v0.1.0` — pre-pipeline baseline (manual; no CI).
-- `v0.2.0` — features #3 history, #4 shuffle/repeat, #6 export, #11 build-pipeline
-  (the 4-feature first cut; cadence normalizes to 3 from here). Next release `v0.3.0` is
-  due after 3 more merged feature branches.
+- `v0.2.0` — first packaged release (wheel + sdist + per-OS binaries). Shipped after feature/11
+  (build pipeline) plus the already-merged feature/08 (playback history), feature/09 (shuffle/repeat),
+  and feature/10 (playlist export). It was a 4-branch first cut; the cadence normalizes to 3 merged
+  features per release from here. Next release `v0.3.0` is due after 3 more merged feature branches.
