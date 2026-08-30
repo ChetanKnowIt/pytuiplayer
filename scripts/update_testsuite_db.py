@@ -59,6 +59,8 @@ FILE_DESCRIPTIONS = {
         "feature/08: playback history tracker (record/recent/replay), H binding.",
     "src/tests/test_feature_09_shuffle_repeat.py":
         "feature/09: shuffle/repeat modes (navigator index logic + z/r bindings).",
+    "src/tests/test_feature_10_playlist_export.py":
+        "feature/10: playlist export to EXTINF M3U (PlaylistExporter + e binding).",
 }
 
 # ---------------------------------------------------------------------------
@@ -317,6 +319,37 @@ BACKLOG = [
     ("test_navigator_instantiated_on_app", "unit",
      "App instantiates a PlaylistNavigator", "done",
      "Low Priority #4"),
+    # feature/10 — Low Priority #6: playlist export
+    ("test_build_lines_emits_extm3u_and_extinf", "unit",
+     "build_lines emits #EXTM3U + #EXTINF entries", "done",
+     "Low Priority #6"),
+    ("test_build_lines_skips_items_without_source", "unit",
+     "Items without a source are skipped", "done",
+     "Low Priority #6"),
+    ("test_build_lines_falls_back_to_filename_for_title", "unit",
+     "Missing title falls back to filename", "done",
+     "Low Priority #6"),
+    ("test_export_m3u_writes_file", "unit",
+     "export_m3u writes a valid M3U file", "done",
+     "Low Priority #6"),
+    ("test_export_m3u_creates_parent_dirs", "unit",
+     "export_m3u creates parent directories", "done",
+     "Low Priority #6"),
+    ("test_export_m3u_empty_items_writes_header_only", "unit",
+     "Empty playlist writes header only", "done",
+     "Low Priority #6"),
+    ("test_app_export_playlist_to_writes_local_items", "unit",
+     "app.export_playlist_to writes local_items", "done",
+     "Low Priority #6"),
+    ("test_app_export_playlist_action_no_items_shows_warning", "unit",
+     "Export with no items shows warning", "done",
+     "Low Priority #6"),
+    ("test_app_export_playlist_action_exports", "unit",
+     "'e' action exports to default path", "done",
+     "Low Priority #6"),
+    ("test_exporter_instantiated_on_app", "unit",
+     "App instantiates a PlaylistExporter", "done",
+     "Low Priority #6"),
 ]
 
 
