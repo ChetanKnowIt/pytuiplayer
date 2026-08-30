@@ -94,7 +94,7 @@ def test_local_metadata_polling_updates_title(tmp_path):
     app.current_title = "track"
 
     tags = {"artist": ["Boards of Canada"], "title": ["Roygbiv"]}
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=tags):
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=tags):
         app._refresh_metadata()
 
     assert app.current_title == "Boards of Canada - Roygbiv"
@@ -116,7 +116,7 @@ def test_local_metadata_polling_is_cached_per_source(tmp_path):
     app._current_local_source = str(mp3)
 
     tags = {"artist": ["A"], "title": ["B"]}
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=tags) as mock_tag:
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=tags) as mock_tag:
         app._refresh_metadata()
         app._refresh_metadata()
         app._refresh_metadata()
@@ -135,7 +135,7 @@ def test_local_metadata_falls_back_to_media_title(tmp_path):
     app._current_local_source = str(mp3)
     app.current_title = "Nothing playing"
 
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=None):
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         app._refresh_metadata()
 
     assert app.current_title == "untagged.mp3"
@@ -161,7 +161,7 @@ def test_play_local_records_current_source(tmp_path):
     mp3.write_bytes(b"\x00")
 
     app = make_app()
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=None):
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         app.play_local({"source": mp3, "title": "song", "duration": None})
 
     assert app.currently_playing == "local"
@@ -252,7 +252,7 @@ def test_playlist_keyboard_binding_plays():
     app.query_one = lambda *a, **k: view
 
     # Invoke the action exactly as Textual's key dispatch would.
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=None):
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         getattr(app, f"action_{bindings[key]}")()
 
     assert ("play", str(Path("/music/first.mp3"))) in mpv.calls
@@ -264,7 +264,7 @@ def test_playlist_keyboard_binding_plays():
 def test_play_local_url_is_flagged_stream():
     """A URL source (e.g. an M3U radio entry) plays as a stream, not a local file."""
     app = make_app()
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=None):
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         app.play_local({"source": "https://ice.somafm.com/groove-256-mp3",
                         "title": "Groove Salad", "duration": None})
 
@@ -277,7 +277,7 @@ def test_play_local_url_is_flagged_stream():
 def test_play_local_url_polls_stream_metadata():
     """An M3U radio URL entry gets icy-title polling via _refresh_stream_metadata."""
     app = make_app(FakeMPV({"icy-title": "Live — Groove Salad"}))
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=None):
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         app.play_local({"source": "https://ice.somafm.com/groove-256-mp3",
                         "title": "Groove Salad", "duration": None})
     app.current_title = "Groove Salad"
@@ -294,7 +294,7 @@ def test_play_local_filesystem_is_not_stream(tmp_path):
     mp3.write_bytes(b"\x00")
 
     app = make_app()
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=None):
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         app.play_local({"source": mp3, "title": "song", "duration": None})
 
     assert app.currently_playing == "local"
@@ -316,7 +316,7 @@ def test_stop_clears_stream_flag():
 def test_update_progress_meta_uses_stream_source():
     """The progress bar shows the stream title for M3U radio URLs too."""
     app = make_app(FakeMPV())
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=None):
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         app.play_local({"source": "https://ice.somafm.com/groove-256-mp3",
                         "title": "Groove Salad", "duration": None})
     app.current_title = "Groove Salad"
@@ -390,7 +390,7 @@ def test_real_radio_m3u_entries_play_as_streams():
 
     # Simulate on_list_view_selected for the first station (item.data is a dict)
     entry = fake.items[0]
-    with patch("pytuiplayer.tui_app.MutagenFile", return_value=None):
+    with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         app.play_local(entry.data)
 
     assert app.currently_playing == "local"

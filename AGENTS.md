@@ -10,7 +10,10 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 
 | File | Role |
 |------|------|
-| `src/pytuiplayer/tui_app.py` | Main App + business logic (thin orchestrator) |
+| `src/pytuiplayer/tui_app.py` | Main App (thin orchestrator — routes events to controllers) |
+| `src/pytuiplayer/volume.py` | VolumeController — volume up/down/mute |
+| `src/pytuiplayer/metadata.py` | MetadataPoller — stream/file metadata polling |
+| `src/pytuiplayer/playlist.py` | PlaylistLoader + PlaylistNavigator — M3U/local loading + prev/next |
 | `src/pytuiplayer/widgets.py` | NowPlaying, ProgressBar, VolumeIndicator widgets |
 | `src/pytuiplayer/screens.py` | ModeScreen, RadioScreen, LocalScreen |
 | `src/pytuiplayer/constants.py` | MAX_PLAYLIST_ITEMS, ICON_OK, ICON_ERR |
@@ -68,7 +71,24 @@ MusicPlayerApp
 | `ProgressBar(Static)` | Reactive | Progress bar (responsive width), elapsed/total, radio metadata |
 | `VolumeIndicator(Static)` | Reactive | Volume/mute display |
 
-### State Management
+### Controller Architecture
+
+The app follows a thin-orchestrator pattern: `MusicPlayerApp` only routes Textual events to focused controllers.
+
+| Controller | Module | Responsibility |
+|------------|--------|----------------|
+| `VolumeController` | `volume.py` | Volume up/down/mute, widget sync |
+| `MetadataPoller` | `metadata.py` | Stream icy-title + local file tag polling |
+| `PlaylistLoader` | `playlist.py` | Load M3U + local files, fetch durations |
+| `PlaylistNavigator` | `playlist.py` | Prev/next navigation in local/radio lists |
+
+`MusicPlayerApp.__init__` instantiates these controllers. Event handlers call them directly:
+- `action_volume_up()` → `self.volume_controller.action_volume_up()`
+- `_refresh_metadata()` → `self.metadata_poller.refresh()`
+- `load_local_files(path)` → `self.playlist_loader.load_local_files(path)`
+- `play_previous()` → `self.playlist_navigator.play_previous()`
+
+This keeps `tui_app.py` focused on app lifecycle, event routing, and UI update paths.
 
 - **Reactive widget state**: Textual `reactive` descriptor on widget attributes (`title`, `state`, `progress`, `duration`, `volume`, `muted`, `_offset`)
 - **App-level state**: Plain attributes on `MusicPlayerApp` (`volume`, `muted`, `current_title`, `option_mode`, `currently_playing`, `_prev_volume`)
@@ -124,13 +144,8 @@ every `uv run pytest` run (see `src/tests/testsuite_db.py`). It is not app data.
 
 ### Duration Fetching
 
-- `fetch_duration(self, item)`: a plain `async def` class method that reads the file tag
-  via the module-level `MutagenFile` binding, stores `item.data["duration"]`, and refreshes
-  the item's label. It is launched off the main thread from `load_local_files` via
-  `self.run_worker(self.fetch_duration, item)`.
-- `_populate_missing_durations(list_view)`: optional async background task that fills missing
-  durations for already-mounted items. It handles Path/string/URL sources (skips URLs and
-  non-existent files) and is enabled only when `self.fetch_duration_eager` is `True`.
+- `fetch_duration(self, item_data)`: a plain `async def` method in `PlaylistLoader` that reads the file tag via the module-level `MutagenFile` binding, stores `item_data["duration"]`, and finds the visible widget in the ListView to update its label. It is launched off the main thread from `load_local_files` via `self.app.run_worker(partial(self.fetch_duration, item), ...)`. The worker receives the data dict (not the widget) because widgets can't survive a `clear()`+`mount()` cycle.
+- `_populate_missing_durations(list_view)`: optional async background task in `PlaylistLoader` that fills missing durations for already-mounted items. It handles Path/string/URL sources (skips URLs and non-existent files) and is enabled only when `self.fetch_duration_eager` is `True`.
 
 ## Testing
 
@@ -227,6 +242,10 @@ Profiled methods include:
 6. **`item.data` shape**: Unified `ItemData(source, title, duration, meta)` TypedDict. `load_local_files` and `load_m3u` both emit this shape. Radio stations use the raw `{"name":..., "url":...}` dict (not ItemData).
 7. **`_meta_label` attribute**: Set on items by `load_m3u` but NOT by `load_local_files` — tests must account for this difference.
 8. **Station loading on RadioScreen**: `RadioScreen.on_mount` reloads stations if `app.stations` is None OR if `station_list.children` is empty (handles switch-back from LocalScreen).
+9. **ListView timing**: `remove_children()` returns `AwaitRemove` that must be awaited, AND Textual needs several event loop cycles (`await asyncio.sleep(0)`) to complete internal widget tree updates. Mounting new items too quickly after removal causes empty children. Always create new items first, then remove old, then yield, then mount.
+10. **Filter data vs widgets**: `app.local_items` stores **data dicts** (not widget references). Widgets can't be reused after `clear()`+`mount()`. Always rebuild fresh `ListItem` widgets from data when filtering.
+11. **Mode switch state clearing**: `on_radio_set_changed` must clear `_stream_source` and `currently_playing` along with `current_title`. Otherwise the 1s `_refresh_metadata` poll reads stale mpv properties and overwrites "Nothing playing" with garbage.
+12. **M3U load race condition**: `LocalScreen.on_mount` fires `set_timer(0.1, self._load_local)` which scans `$HOME`. When loading an M3U, `on_directory_tree_file_selected` must call `cancel_pending_local_load()` to prevent the timer from overwriting `local_items` with `$HOME` files.
 
 ## Rules for Modifying Existing Components
 

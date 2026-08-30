@@ -277,17 +277,17 @@ def test_progressbar_uses_widget_width():
     with patch.object(type(bar), "size", new_callable=lambda: property(lambda self: FakeSize())):
         rendered = bar.render()
 
-    # The bar should be present
-    assert "[█" in rendered
+    # The bar should be present (Winamp-style: ─ and ● characters)
+    assert "─" in rendered or "●" in rendered
 
     # With a smaller width, the bar should be shorter
     with patch.object(type(bar), "size", new_callable=lambda: property(lambda self: SmallSize())):
         small_rendered = bar.render()
 
-    # Extract bar content between [ and ]
+    # Extract bar content: between start and " /" time marker
     import re
-    large_bar = re.search(r'\[([█░]+)\]', rendered)
-    small_bar = re.search(r'\[([█░]+)\]', small_rendered)
+    large_bar = re.search(r'([─●]+)', rendered)
+    small_bar = re.search(r'([─●]+)', small_rendered)
 
     assert large_bar and small_bar
     # The large width bar should be longer

@@ -1,4 +1,4 @@
-"""Widgets for pytuiplayer.
+"""Widgets for pytuiplayer — Winamp-style retro TUI.
 
 Exports: NowPlaying, NowPlayingMessage, ProgressBar, VolumeIndicator.
 """
@@ -14,11 +14,10 @@ from pytuiplayer.utils import fmt_mmss
 
 
 class NowPlaying(Static):
-    """Displays the current track title, source, and playback state.
+    """Winamp-style LED track display.
 
-    State is updated exclusively via :class:`NowPlayingMessage` posted by
-    ``MusicPlayerApp.update_now_playing`` — there is no direct-assignment
-    fallback, keeping a single, debuggable update path.
+    Renders a compact digital readout: position in playlist, elapsed time,
+    kHz sample rate, kbps bitrate, and the scrolling track title.
     """
 
     title = reactive("Nothing playing")
@@ -27,10 +26,14 @@ class NowPlaying(Static):
     progress = reactive(0.0)
     duration = reactive(0.0)
     _offset = reactive(0)
+    _position = reactive(1)   # track position in playlist (1-based)
+    _total = reactive(0)      # total tracks in playlist
+    _khz = reactive("44.1")   # sample rate display
+    _kbps = reactive("320")   # bitrate display
 
     def on_mount(self) -> None:
-        # tick every 0.6s to drive the marquee
-        self.set_interval(0.6, self._tick)
+        # tick every 0.5s to drive the marquee — slightly faster than before
+        self.set_interval(0.5, self._tick)
 
     def _tick(self) -> None:
         self._offset = (self._offset + 1) % max(1, len(self.title) + 1)
@@ -41,6 +44,7 @@ class NowPlaying(Static):
         try:
             if message.title:
                 self.title = message.title
+                self._offset = 0  # reset marquee on new track
             if message.source:
                 self.source = message.source
             if message.state:
@@ -59,62 +63,60 @@ class NowPlaying(Static):
         if len(text) <= width:
             return text
 
-        buf = text + "   " + text
-        start = self._offset
+        # Smooth scrolling: pad with spaces, advance offset
+        buf = text + "    " + text
+        start = self._offset % len(text)
         slice_end = start + width
         if slice_end > len(buf):
             slice_end = len(buf)
-        return buf[start:slice_end]
+        result = buf[start:slice_end]
+        # Pad if at the very end we get fewer chars
+        if len(result) < width:
+            result += buf[: width - len(result)]
+        return result[:width]
 
     def render(self) -> str:
-        # countdown (remaining) to show at top-left
-        remaining = None
-        try:
-            if self.duration and self.duration > 0:
-                remaining = int(self.duration - (self.progress or 0))
-        except Exception:
-            remaining = None
-
-        countdown = fmt_mmss(remaining) if remaining is not None else "--:--"
+        # Build the Winamp-style display
+        elapsed = fmt_mmss(int(self.progress) if self.progress else 0)
+        total_time = fmt_mmss(int(self.duration) if self.duration else 0)
 
         title_text = self.title or "Nothing playing"
 
-        # Determine whether to use a scrolling marquee based on available width.
+        # Determine marquee width based on available space
         try:
             size = getattr(self, "size", None)
             if size and getattr(size, "width", 0):
                 total_width = size.width
-                # Reserved characters for countdown, labels, source and state
-                reserved = len(f"[{countdown}] Now Playing: ")
-                if self.source:
-                    reserved += len(f" | {self.source}")
-                reserved += len(self.state or "") + 2
-                avail = max(0, total_width - reserved)
-                if avail > 10 and len(title_text) > avail:
+                # Reserve for: position + elapsed + "/" + total + khz + kbps + state + padding
+                reserved = len("00/00 00:00/00:00 44.1kHz 320kbps ⏹ ")
+                avail = max(15, total_width - reserved)
+                if len(title_text) > avail:
                     marquee = self._marquee(avail)
                 else:
                     marquee = title_text
             else:
-                # In contexts where widget size isn't available (tests), prefer
-                # non-scrolling full text so assertions are deterministic.
-                marquee = self._marquee() or title_text
+                marquee = title_text
         except Exception:
-            marquee = self._marquee() or title_text
+            marquee = title_text
 
-        # Build compact display: [countdown] Title | Source | State
-        parts = [f"[{countdown}]", "Now Playing:"]
-
-        if title_text and title_text != "Nothing playing":
-            parts.append(marquee)
+        # Position display: "01/12 " or "   -- " if unknown
+        if self._total > 0:
+            pos_str = f"{self._position:02d}/{self._total:02d}"
         else:
-            parts.append("Nothing playing")
+            pos_str = "--   "
 
-        if self.source:
-            parts.append(f"| {self.source}")
+        # Time display: "elapsed/total" or "--:--/--:--"
+        time_str = f"{elapsed}/{total_time}"
 
-        parts.append(self.state)
+        # Bottom status line: khz / kbps
+        khz_str = f"{self._khz}kHz"
+        kbps_str = f"{self._kbps}kbps"
 
-        return " ".join(parts)
+        # Top line: position + time + state
+        top = f"{pos_str}  {time_str}  {khz_str} {kbps_str}  {self.state}"
+
+        # Bottom line: marquee title
+        return f"{top}\n{marquee}"
 
 
 class NowPlayingMessage(Message):
@@ -129,25 +131,35 @@ class NowPlayingMessage(Message):
 
 
 class ProgressBar(Static):
-    """Playback progress bar with elapsed/total time and radio metadata.
+    """Winamp-style seek bar with elapsed/total time and clickable progress indicator.
 
-    Bar width derives from ``self.size.width`` (minus padding) rather than a
-    hardcoded character count, so it adapts to the terminal width.
+    Renders: ●━━━━━━━ 01:23 / 04:32  (with green bar for played portion)
+    For streams (radio): shows metadata title instead of seek bar
     """
 
     progress = reactive(0.0)
     duration = reactive(0.0)
     meta = reactive("")
+    stream = reactive(False)  # True for live streams (radio) — show metadata, not seek bar
 
     # Minimum / maximum bar width (in characters) to keep it readable
     MIN_BAR_WIDTH = 20
     MAX_BAR_WIDTH = 160
 
     def render(self) -> str:
+        # For streams (radio): always show metadata, even if duration is available
+        if self.stream:
+            if self.meta:
+                return f"Now: {self.meta}"
+            if self.duration and self.duration > 0:
+                elapsed = fmt_mmss(self.progress)
+                total = fmt_mmss(self.duration)
+                return f"♪ Streaming  {elapsed} / {total}"
+            return "♪ Streaming"
+
         # Unknown duration -> if we have radio metadata, show it on the progress area
         if not self.duration or self.duration <= 0:
             if self.meta:
-                # compact display for metadata
                 return f"Now: {self.meta}"
             return "⏱ Duration unknown"
 
@@ -164,25 +176,36 @@ class ProgressBar(Static):
         except Exception:
             width = self.MAX_BAR_WIDTH
 
-        # Reserve space for the brackets + elapsed/total + padding
-        reserved = len("[") + len("] ") + len(" --:-- / --:--")
+        # Reserve space for: elapsed(5) + " / " (3) + total(5) + padding + bracket (2)
+        reserved = len(" 00:00 / 00:00")
         bar_width = max(self.MIN_BAR_WIDTH, min(self.MAX_BAR_WIDTH, width - reserved))
 
-        filled = int(ratio * bar_width)
-        bar = "█" * filled + "░" * (bar_width - filled)
+        # Winamp-style: use a position marker (●) in the bar
+        pos = int(ratio * bar_width)
+        if pos == 0:
+            bar = "●" + "─" * (bar_width - 1)
+        elif pos >= bar_width:
+            bar = "─" * (bar_width - 1) + "●"
+        else:
+            bar = "─" * pos + "●" + "─" * (bar_width - pos - 1)
 
         elapsed = fmt_mmss(self.progress)
         total = fmt_mmss(self.duration)
 
-        return f"[{bar}] {elapsed} / {total}"
+        return f"{bar} {elapsed} / {total}"
 
 
 class VolumeIndicator(Static):
-    """Volume / mute display."""
+    """Winamp-style volume / mute display with a mini bar."""
 
     volume = reactive(50)
     muted = reactive(False)
 
     def render(self) -> str:
-        vol = "🔇" if self.muted else f"🔊{self.volume}"
-        return f"Volume: {vol}"
+        if self.muted:
+            return "VOL ░░░░░░░░░░  MUTE"
+
+        bar_width = 10
+        filled = int((self.volume / 100) * bar_width)
+        bar = "█" * filled + "░" * (bar_width - filled)
+        return f"VOL {bar} {self.volume:3d}%"

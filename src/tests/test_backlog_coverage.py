@@ -18,12 +18,8 @@ import types
 from pathlib import Path
 
 from pytuiplayer.station_player import StationPlayer
-from pytuiplayer.tui_app import (
-    MusicPlayerApp,
-    NowPlaying,
-    ProgressBar,
-    VolumeIndicator,
-)
+from pytuiplayer.tui_app import MusicPlayerApp
+from pytuiplayer.widgets import NowPlaying, ProgressBar, VolumeIndicator
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +331,7 @@ def test_load_m3u_handles_aiofiles_and_sync_fallback(tmp_path: Path, monkeypatch
     playlist.write_text("#EXTM3U\n#EXTINF:123,Artist A - Title A\nsong1.mp3\n")
 
     # --- sync fallback path: force aiofiles to be unavailable ---
-    monkeypatch.setattr("pytuiplayer.tui_app.aiofiles", None)
+    monkeypatch.setattr("pytuiplayer.playlist.aiofiles", None)
     app = _stub_app(MusicPlayerApp())
     fake = FakeList()
     app.query_one = lambda *a, **k: fake
@@ -349,7 +345,7 @@ def test_load_m3u_handles_aiofiles_and_sync_fallback(tmp_path: Path, monkeypatch
         import aiofiles  # noqa: F401
     except ImportError:
         return
-    monkeypatch.setattr("pytuiplayer.tui_app.aiofiles", aiofiles)
+    monkeypatch.setattr("pytuiplayer.playlist.aiofiles", aiofiles)
     app2 = _stub_app(MusicPlayerApp())
     fake2 = FakeList()
     app2.query_one = lambda *a, **k: fake2
@@ -468,25 +464,27 @@ def test_now_playing_marquee_scrolls_long_titles():
 # ===========================================================================
 # Integration / Widget Tests #1-#4
 # ===========================================================================
-def test_now_playing_widget_renders_countdown():
-    """#1 — remaining time (countdown) shows in the NowPlaying render."""
+def test_now_playing_widget_renders_elapsed_and_total():
+    """#1 — elapsed and total time show in the NowPlaying render (Winamp-style)."""
     nw = NowPlaying()
     nw.duration = 300.0
-    nw.progress = 75.0  # remaining = 225s => 03:45
+    nw.progress = 75.0  # 01:15 / 05:00
 
     rendered = nw.render()
-    assert "[03:45]" in rendered
+    assert "01:15" in rendered
+    assert "05:00" in rendered
 
 
 def test_volume_indicator_shows_muted_state():
-    """#2 — the volume indicator renders a mute glyph when muted."""
+    """#2 — the volume indicator shows MUTE when muted, bar when not."""
     vi = VolumeIndicator()
     vi.muted = True
-    assert "🔇" in vi.render()
+    assert "MUTE" in vi.render()
 
     vi.muted = False
     vi.volume = 42
-    assert "🔊42" in vi.render()
+    assert "VOL" in vi.render()
+    assert "42%" in vi.render()
 
 
 def test_mode_switch_stops_playback():

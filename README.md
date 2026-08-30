@@ -10,9 +10,12 @@
 - **M3U Radio Lists** — a playlist of radio-station URLs is treated as live streams (correctly labeled "Radio" with metadata polling), not local files.
 - **Directory Navigation** — file-tree browser to pick MP3s, M3U playlists, or station JSON files.
 - **Playlist Playback** — play a playlist from the start with the `o` key (or the on-screen control).
+- **Playlist Search/Filter** — type to filter loaded tracks by title (case-insensitive substring match). Press `/` to focus search, Escape to clear.
+- **Prev/Next Navigation** — skip to previous or next track in the current list.
 - **Playback Controls** — play, pause, stop, seek (±5s and 10%/50%/90%), volume up/down, mute.
 - **Mode Switching** — switch between Radio and Local modes via radio buttons.
-- **Modern TUI** — built with Textual; responsive progress bar, volume indicator, and marquee Now Playing.
+- **Winamp-Style UI** — LED display (position/time/khz/kbps), seek-bar progress (● marker), retro volume bar, amber/green theme.
+- **Modern TUI** — built with Textual; responsive layout, loading indicators, marquee Now Playing.
 
 ## Installation
 
@@ -70,6 +73,9 @@ python -m pytuiplayer
 | `1` / `5` / `9` | Seek to 10% / 50% / 90% |
 | `+` / `-` | Volume up / down |
 | `m` | Toggle mute |
+| `o` | Play playlist from start |
+| `/` | Focus search input (Local mode) |
+| `Escape` | Clear search / exit search focus |
 
 ### Navigating the UI
 
