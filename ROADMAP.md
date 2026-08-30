@@ -171,6 +171,41 @@ EXTINF M3U file. Pure file I/O, fully unit-testable.
 
 **Status:** 147 tests pass (137 + 10), ruff clean, 98/98 backlog done.
 
+### feature/11-build-pipeline — **DONE** (branch `feature/11-build-pipeline`)
+Adds a reproducible build + distribution pipeline so the app can be packaged for
+end users (wheel/sdist + one-file binaries) with CI gates and release automation.
+
+**New files:**
+- `Makefile` — local build pipeline: `make test`, `make lint`, `make build`
+  (wheel+sdist), `make build-exe`, `make dist`, `make clean`.
+- `scripts/build_pyinstaller.py` — committed one-file PyInstaller builder. Runs
+  `PyInstaller.__main__` with `--onefile --collect-all textual --collect-all mpv`
+  and bundles `stations.json` + `musicplayer_tui.css` into the package dir so the
+  runtime `Path(__file__).parent` lookup resolves inside the frozen executable.
+- `.github/workflows/ci.yml` — merge gate: `ruff check` + `pytest` on push/PR to `main`.
+- `.github/workflows/build.yml` — CD: on a `v*` tag (or manual dispatch) builds the
+  wheel + sdist and one-file binaries for Linux/macOS/Windows, then drafts a GitHub
+  release and attaches every artifact.
+
+**Changed:**
+- `pyproject.toml` — version `0.1.0` → `0.2.0`.
+- `README.md` — new "Packaging & Distribution" section (source install, wheel,
+  one-file binary, CI/CD notes).
+- `AGENTS.md` — new build files in Key Files table + a "Packaging & Distribution"
+  section documenting the runtime `libmpv` requirement and the local/CI pipelines.
+
+**Verification:**
+- `uv run python scripts/build_pyinstaller.py` → built `dist/pytuiplayer` (111M);
+  smoke-run rendered the full TUI and exited cleanly (CSS + stations.json resolve inside the bundle).
+- `uv build` → wheel + sdist contain `stations.json` and `musicplayer_tui.css`.
+- `uv run pytest -q` → **147 passed**; `uv run ruff check .` → All checks passed!.
+
+**Notes / limitations:**
+- `python-mpv` loads the *system* `libmpv` at runtime via ctypes — it is NOT bundled,
+  so the target machine must have `mpv` installed on PATH for playback to work.
+- The legacy `pytuiplayer.spec` is retained only as reference (it is `*.spec`-gitignored
+  and does not build cleanly from the repo root); `scripts/build_pyinstaller.py` is canonical.
+
 ### Low Priority (remaining — unscheduled)
 2. Add station favorites — bookmark frequently played stations
 5. Add configurable keybindings — user-defined bindings
