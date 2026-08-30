@@ -14,7 +14,7 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/pytuiplayer/volume.py` | VolumeController — volume up/down/mute |
 | `src/pytuiplayer/metadata.py` | MetadataPoller — stream/file metadata polling |
 | `src/pytuiplayer/playlist.py` | PlaylistLoader + PlaylistNavigator — M3U/local loading + prev/next |
-| `src/pytuiplayer/widgets.py` | NowPlaying, ProgressBar, VolumeIndicator widgets |
+| `src/pytuiplayer/widgets.py` | NowPlaying, NowPlayingMessage, VolumeIndicator widgets |
 | `src/pytuiplayer/screens.py` | ModeScreen, RadioScreen, LocalScreen |
 | `src/pytuiplayer/constants.py` | MAX_PLAYLIST_ITEMS, ICON_OK, ICON_ERR |
 | `src/pytuiplayer/utils.py` | Pure helpers: parse_extinf, resolve_source, fmt_mmss |
@@ -42,7 +42,7 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 
 `MusicPlayerApp(App)` in `tui_app.py` is a thin orchestrator. Business logic lives here, but widgets, screens, constants, helpers, and types are imported from their own modules:
 
-- `widgets.py` — `NowPlaying`, `NowPlayingMessage`, `ProgressBar`, `VolumeIndicator`
+- `widgets.py` — `NowPlaying`, `NowPlayingMessage`, `VolumeIndicator`
 - `screens.py` — `ModeScreen` (base), `RadioScreen`, `LocalScreen`
 - `constants.py` — `MAX_PLAYLIST_ITEMS`, `DEFAULT_PLAYLIST_BATCH_SIZE`, `ICON_OK`, `ICON_ERR`
 - `utils.py` — `parse_extinf`, `resolve_source`, `fmt_mmss` (pure functions)
@@ -52,7 +52,7 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 
 ### Screen Abstraction
 
-Mode switching uses Textual's screen stack (`RadioScreen` / `LocalScreen`), not manual visibility toggling. `RadioScreen` and `LocalScreen` extend `ModeScreen`, which composes shared widgets (Header, Footer, NowPlaying, ProgressBar, controls, RadioSet) and calls `compose_mode_content()` for mode-specific content.
+Mode switching uses Textual's screen stack (`RadioScreen` / `LocalScreen`), not manual visibility toggling. `RadioScreen` and `LocalScreen` extend `ModeScreen`, which composes shared widgets (Header, Footer, NowPlaying, controls, RadioSet) and calls `compose_mode_content()` for mode-specific content.
 
 ```
 MusicPlayerApp
@@ -70,7 +70,7 @@ MusicPlayerApp
 | `NowPlayingMessage(Message)` | Message | Single update path from `update_now_playing()` to `NowPlaying` |
 | `VolumeIndicator(Static)` | Reactive | Volume/mute display |
 
-The old `ProgressBar` widget was merged into `NowPlaying` to eliminate a separate row and create a more compact Winamp-style layout.
+The old `ProgressBar` widget was merged into `NowPlaying` (feature/06) to eliminate a separate row and create a more compact Winamp-style layout. `NowPlaying` renders 2 rows: the LED display (row 1) and the seek bar / stream metadata (row 2).
 
 ### Controller Architecture
 
@@ -156,7 +156,7 @@ every `uv run pytest` run (see `src/tests/testsuite_db.py`). It is not app data.
 - Pattern: Inject `FakeMPV` / `FakeMPVPlayer` via `app.mpv = ...`
 - Stub `app.query_one` and `app.update_now_playing` to avoid Textual DOM
 - Use `asyncio.run()` for async methods (pytest-asyncio is NOT installed)
-- Run: `uv run pytest -q` from repo root (expects 59 passed)
+- Run: `uv run pytest -q` from repo root (currently **102 passed**; the `network`-marked radio test auto-skips offline). The live count is the source of truth — re-run `uv run pytest -q` rather than trusting a hardcoded number.
 - Every pytest run also refreshes the SQLite inventory `testsuite.db`; view it with
   `uv run python scripts/report_testsuite_db.py` (rebuild/enrich via
   `scripts/update_testsuite_db.py`). The `network`-marked radio test auto-skips offline.
@@ -227,7 +227,7 @@ Set `PYTUIP_PROFILE=1` to enable performance profiling (logs execution times at 
 Profiling decorators (`@profile`, `@profile_async`) from `pytuiplayer.profiling` are applied to all critical UI event handlers, render methods, and async operations. When `PYTUIP_PROFILE=1` is set, each profiled method logs its execution time in milliseconds. When disabled (default), the decorators add near-zero overhead (single env var check).
 
 Profiled methods include:
-- All render methods (NowPlaying, ProgressBar, VolumeIndicator)
+- All render methods (NowPlaying, VolumeIndicator)
 - All action handlers (play, pause, stop, seek, volume, mute)
 - Event handlers (on_mount, on_button_pressed, on_list_view_selected, etc.)
 - Async loaders (load_stations, load_local_files, load_m3u, _load_json)

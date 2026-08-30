@@ -73,8 +73,8 @@ into their own modules.
 - `tui_app.py` slimmed from 1072 → 621 lines (42% reduction)
 
 **Winamp UI Overhaul:**
-- `widgets.py` — LED-style NowPlaying (position/time/khz/kbps), seek-bar ProgressBar (● marker),
-  retro VolumeIndicator (volume bar + MUTE state)
+- `widgets.py` — LED-style NowPlaying (position/time/khz/kbps) with integrated seek bar (● marker)
+  rendered as row 2; retro VolumeIndicator (volume bar + MUTE state)
 - `screens.py` — Controls bar with prev/next buttons, search input on LocalScreen, loading status
 - `musicplayer_tui.css` — Winamp retro theme: LED green (#39ff14), amber (#ffd24a) accents
 - Search: `/` to focus, Escape to blur+clear, case-insensitive substring filter on loaded items
@@ -96,6 +96,23 @@ into their own modules.
 - Mode switch clears `_stream_source` + `currently_playing` to prevent stale metadata
 - M3U load cancels pending `$HOME` scan to prevent race condition
 - ProgressBar shows metadata for streams (not seek bar) via `stream` reactive flag
+
+### feature/06-fix-ui-alignment — **DONE** (branch `feature/06-fix-ui-alignment`, merged to `main`)
+Compacted the layout by merging the separate `ProgressBar` widget into `NowPlaying`, creating a single
+2-row Winamp-style display (LED line + seek-bar / stream-metadata line) instead of two stacked rows.
+
+**Changes (merged):**
+- `widgets.py` — Removed `ProgressBar` class; added `stream` + `meta` reactives to `NowPlaying`
+- `screens.py` — Removed the separate `ProgressBar` yield from `ModeScreen.compose()`
+- `tui_app.py` — `action_stop()` / `update_progress()` update `NowPlaying` (not `ProgressBar`)
+- `musicplayer_tui.css` — `#now-playing` reduced from `height: 4` to a compact box; tests updated
+- All tests retargeted to `NowPlaying` (no `ProgressBar` references remain)
+
+**Status:** 102 tests pass, ruff clean, 53/53 backlog done. `main` is the known-good baseline.
+
+> Follow-up: the `#now-playing` box still clips its 2nd row at `height: 5` (content area is only 1
+> line because of border + padding). A continued UI-alignment fix (see new branch) raises the height
+> to fit both rows and aligns the `#volume-indicator` inside `#controls`. See `docs/AI_TASK_STATE.md`.
 
 ### Low Priority (remaining — unscheduled)
 2. Add station favorites — bookmark frequently played stations
