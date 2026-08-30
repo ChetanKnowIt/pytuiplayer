@@ -3,21 +3,23 @@
 The app switches between ``RadioScreen`` and ``LocalScreen`` via
 ``switch_screen`` instead of manually toggling widget visibility, giving a
 clean mode-switch abstraction. Each screen composes the shared widgets
-(Header, Footer, NowPlaying, ProgressBar, controls) plus its mode-specific
+(Header, Footer, NowPlaying, controls) plus its mode-specific
 content.
 
 Winamp-style layout:
   ┌─────────────────────────────────────────────────────┐
-  │ Header (track info, time, bitrate)                  │
+  │ Header (app name + key hints)                       │
   ├─────────────────────────────────────────────────────┤
-  │ Progress Bar (seek)                                 │
+  │ NowPlaying (LED display + seek bar)                 │
   ├─────────────────────────────────────────────────────┤
   │ Controls (Play/Pause/Stop/Prev/Next/Volume)         │
   ├────────────┬────────────────────────────────────────┤
   │ Sidebar    │ Content (station list or local list)    │
   │ (Mode      │ + search bar for local mode             │
   │  buttons)  │                                        │
-  └────────────┴────────────────────────────────────────┘
+  ├────────────┴────────────────────────────────────────┤
+  │ Footer (key hints)                                  │
+  └─────────────────────────────────────────────────────┘
 """
 
 from pathlib import Path
@@ -40,15 +42,14 @@ from textual.widgets import (
     Static,
 )
 
-from pytuiplayer.widgets import NowPlaying, ProgressBar, VolumeIndicator
+from pytuiplayer.widgets import NowPlaying, VolumeIndicator
 
 
 class ModeScreen(Screen):
     """Base class for mode screens — composes shared + mode-specific widgets.
 
     Winamp-style layout:
-      - NowPlaying: full-width LED display at top
-      - ProgressBar: full-width seek bar
+      - NowPlaying: full-width LED display with integrated seek bar
       - Controls: horizontal button bar
       - Main content: sidebar (mode selector) + content area
     """
@@ -56,10 +57,8 @@ class ModeScreen(Screen):
     def compose(self):
         yield Header()
         yield Footer()
-        # Now Playing display — full width, LED style
+        # Now Playing display — full width, LED style with integrated seek bar
         yield NowPlaying(id="now-playing")
-        # Progress / seek bar
-        yield ProgressBar(id="progress")
         # Controls bar
         with Horizontal(id="controls"):
             yield Button("⏮", id="prev", classes="control-btn")
@@ -105,13 +104,6 @@ class ModeScreen(Screen):
             vi = self.query_one("#volume-indicator", VolumeIndicator)
             vi.volume = self.app.volume
             vi.muted = self.app.muted
-        except Exception:
-            pass
-        try:
-            pb = self.query_one("#progress", ProgressBar)
-            pb.progress = 0
-            pb.duration = 0
-            pb.meta = ""
         except Exception:
             pass
 

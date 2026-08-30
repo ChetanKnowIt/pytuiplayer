@@ -36,7 +36,7 @@ from pytuiplayer.profiling import profile, profile_async
 from pytuiplayer.screens import LocalScreen, RadioScreen
 from pytuiplayer.station_player import StationPlayer
 from pytuiplayer.volume import VolumeController
-from pytuiplayer.widgets import NowPlaying, NowPlayingMessage, ProgressBar
+from pytuiplayer.widgets import NowPlaying, NowPlayingMessage
 
 logger = get_logger("tui_app")
 
@@ -166,11 +166,11 @@ class MusicPlayerApp(App):
         self.current_title = "Nothing playing"
 
         try:
-            bar = self.query_one(ProgressBar)
+            bar = self.query_one(NowPlaying)
             bar.progress = 0
             bar.duration = 0
         except Exception:
-            logger.debug("ProgressBar not available in action_stop", exc_info=True)
+            logger.debug("NowPlaying not available in action_stop", exc_info=True)
 
         self.update_now_playing("Nothing playing", "", "⏹")
 
@@ -465,11 +465,11 @@ class MusicPlayerApp(App):
             return
 
         try:
-            bar = self.query_one(ProgressBar)
+            bar = self.query_one(NowPlaying)
             bar.progress = pos or 0
             bar.duration = dur or 0
         except Exception:
-            logger.debug("ProgressBar not available", exc_info=True)
+            logger.debug("NowPlaying not available", exc_info=True)
             return
         try:
             if (

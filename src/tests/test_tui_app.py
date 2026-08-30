@@ -82,25 +82,25 @@ def test_load_stations_ui_updates_list():
 
 
 def test_progressbar_unknown_duration():
-    from pytuiplayer.widgets import ProgressBar
+    from pytuiplayer.widgets import NowPlaying
 
-    bar = ProgressBar()
+    bar = NowPlaying()
     bar.progress = 0
     bar.duration = 0
 
-    assert bar.render() == "⏱ Duration unknown"
+    assert "Duration unknown" in bar.render()
 
 
 def test_progressbar_formats_mmss_and_shows_bar():
-    from pytuiplayer.widgets import ProgressBar
+    from pytuiplayer.widgets import NowPlaying
 
-    bar = ProgressBar()
+    bar = NowPlaying()
     bar.progress = 75    # 1:15
     bar.duration = 300   # 5:00
 
     s = bar.render()
-    assert "01:15 / 05:00" in s
-    # Winamp-style: position marker and bar characters
+    assert "01:15" in s
+    assert "05:00" in s
     assert "●" in s
     assert "─" in s
 
@@ -258,7 +258,7 @@ def test_visibility_toggle_hides_unused_widgets():
 
 
 def test_progressbar_shows_radio_meta_when_streaming():
-    from pytuiplayer.widgets import NowPlaying, ProgressBar
+    from pytuiplayer.widgets import NowPlaying
 
     app = MusicPlayerApp()
     class FakePlayer:
@@ -274,17 +274,14 @@ def test_progressbar_shows_radio_meta_when_streaming():
     app._stream_source = True
     app.current_title = "Artist - Track"
 
-    # fake query_one to return a ProgressBar instance
+    # fake query_one to return a NowPlaying instance
     bar = None
     def query_one(sel, *a, **k):
         nonlocal bar
-        if sel == ProgressBar:
-            if bar is None:
-                bar = ProgressBar()
-            return bar
         if sel == NowPlaying:
-            nw = NowPlaying()
-            return nw
+            if bar is None:
+                bar = NowPlaying()
+            return bar
         raise KeyError(sel)
 
     app.query_one = query_one

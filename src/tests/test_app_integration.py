@@ -1,7 +1,7 @@
 from textual.widgets import Label, ListItem
 
 from pytuiplayer.tui_app import MusicPlayerApp
-from pytuiplayer.widgets import NowPlaying, ProgressBar
+from pytuiplayer.widgets import NowPlaying
 
 
 def test_app_shows_nowplaying_during_play_and_progress():
@@ -23,7 +23,6 @@ def test_app_shows_nowplaying_during_play_and_progress():
 
     # Prepare widgets that query_one will return
     now_widget = NowPlaying()
-    progress_widget = ProgressBar()
 
     # Prepare a fake local list with one playlist item
     item = ListItem(Label("song.mp3"))
@@ -41,8 +40,6 @@ def test_app_shows_nowplaying_during_play_and_progress():
             return fake_list
         if selector == NowPlaying:
             return now_widget
-        if selector == ProgressBar or selector == "#progress":
-            return progress_widget
         raise KeyError(selector)
 
     app.query_one = query_one
@@ -59,6 +56,6 @@ def test_app_shows_nowplaying_during_play_and_progress():
     app.mpv._dur = 120
     app.update_progress()
 
-    assert progress_widget.progress == 30
-    assert progress_widget.duration == 120
+    assert now_widget.progress == 30
+    assert now_widget.duration == 120
     assert now_widget.title == "Integrate - Test"

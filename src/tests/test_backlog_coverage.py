@@ -19,7 +19,7 @@ from pathlib import Path
 
 from pytuiplayer.station_player import StationPlayer
 from pytuiplayer.tui_app import MusicPlayerApp
-from pytuiplayer.widgets import NowPlaying, ProgressBar, VolumeIndicator
+from pytuiplayer.widgets import NowPlaying, VolumeIndicator
 
 
 # ---------------------------------------------------------------------------
@@ -217,18 +217,15 @@ def test_action_seek_to_percent_no_absolute_fallback():
 
 
 def test_update_progress_sets_bar_values():
-    """#7 — update_progress pushes time/duration into the ProgressBar."""
+    """#7 — update_progress pushes time/duration into the NowPlaying widget."""
     mpv = FakeMPV()
     mpv._pos = 42
     mpv._dur = 210
     app = _stub_app(MusicPlayerApp(), mpv=mpv)
 
-    bar = ProgressBar()
     now = NowPlaying()
 
     def query_one(sel, *a, **k):
-        if sel is ProgressBar:
-            return bar
         if sel is NowPlaying:
             return now
         raise KeyError(sel)
@@ -236,8 +233,8 @@ def test_update_progress_sets_bar_values():
     app.query_one = query_one
     app.update_progress()
 
-    assert bar.progress == 42
-    assert bar.duration == 210
+    assert now.progress == 42
+    assert now.duration == 210
 
 
 def test_refresh_metadata_updates_title_for_radio():

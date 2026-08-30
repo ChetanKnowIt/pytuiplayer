@@ -29,7 +29,7 @@ Footer {
 }
 
 /* ===========================
-   Now Playing Box - LED Display
+   Now Playing Box - LED Display with Seek Bar
    =========================== */
 #now-playing {
     border: round #ff9e00;
@@ -38,7 +38,7 @@ Footer {
     background: #0b0b0b;
     text-style: bold;
     color: #39ff14;
-    height: 4;
+    height: 3;
     content-align: left middle;
 }
 
