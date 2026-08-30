@@ -49,6 +49,8 @@ FILE_DESCRIPTIONS = {
     "src/tests/test_radio_integration.py": "Live radio stream (network, auto-skips offline).",
     "src/tests/test_backlog_coverage.py": "ROADMAP Test Backlog coverage suite.",
     "src/tests/test_feature_02_design_flows.py": "feature/02 acceptance tests (design flows).",
+    "src/tests/test_feature_03_missing_features.py":
+        "feature/03: local metadata, playlist action+binding, M3U radio fix, real-list dataset.",
 }
 
 # ---------------------------------------------------------------------------
@@ -106,6 +108,40 @@ BACKLOG = [
      "mpv.stop() on mode change", "done", "ROADMAP Integration #3"),
     ("test_mode_switch_updates_visibility", "integration",
      "All three widgets toggled", "done", "ROADMAP Integration #4"),
+    # feature/03 — Missing Features / Gaps #11, #12, #13
+    ("test_local_metadata_polling_updates_title", "unit",
+     "_refresh_metadata reads mutagen tags for local files", "done",
+     "ROADMAP Gap #11"),
+    ("test_action_play_playlist_resolves_item", "unit",
+     "action_play_playlist resolves item.data without ListView.items", "done",
+     "ROADMAP Gap #12"),
+    ("test_playlist_keyboard_binding_plays", "unit",
+     "'o' binding triggers action_play_playlist and plays first item", "done",
+     "ROADMAP Gap #13"),
+    # feature/03 — bug fix: M3U radio URL entries treated as streams (not "Local File")
+    ("test_play_local_url_is_flagged_stream", "unit",
+     "URL source (M3U radio) plays as stream, labeled Radio", "done",
+     "M3U radio bug"),
+    ("test_play_local_url_polls_stream_metadata", "unit",
+     "M3U radio URL gets icy-title polling", "done",
+     "M3U radio bug"),
+    ("test_play_local_filesystem_is_not_stream", "unit",
+     "Local .mp3 path is not a stream", "done",
+     "M3U radio bug"),
+    ("test_stop_clears_stream_flag", "unit",
+     "stop clears currently_playing + _stream_source", "done",
+     "M3U radio bug"),
+    ("test_update_progress_meta_uses_stream_source", "unit",
+     "progress bar shows stream title for M3U radio URLs", "done",
+     "M3U radio bug"),
+    # feature/03 — dataset-driven coverage with the real HQ radio list
+    # (src/tests/assets/radio_stations_hq.m3u)
+    ("test_load_real_radio_m3u_populates", "integration",
+     "Real 177-station M3U (CRLF + ':' titles) loads; all entries are URLs", "done",
+     "M3U radio bug"),
+    ("test_real_radio_m3u_entries_play_as_streams", "integration",
+     "Selecting a real list entry plays as a stream labeled Radio", "done",
+     "M3U radio bug"),
 ]
 
 

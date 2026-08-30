@@ -268,6 +268,7 @@ def test_progressbar_shows_radio_meta_when_streaming():
     # simulate radio playing
     app.option_mode = "radio"
     app.currently_playing = "radio"
+    app._stream_source = True
     app.current_title = "Artist - Track"
 
     # fake query_one to return a ProgressBar instance

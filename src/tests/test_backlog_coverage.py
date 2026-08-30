@@ -251,6 +251,7 @@ def test_refresh_metadata_updates_title_for_radio():
     app = _stub_app(MusicPlayerApp(), mpv=mpv)
     app.option_mode = "radio"
     app.currently_playing = "radio"
+    app._stream_source = True
     app.current_title = "Old Title"
 
     captured = []

@@ -1,68 +1,89 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`feature/02-fix-design-flows` (branched off `main` @ `dcfeadf`, known-good baseline: 53 tests, ruff clean)
+`feature/03-fix-missing-features` (branched off `main` @ `35b3928`, known-good baseline: 59 tests, ruff clean)
 
 ## Purpose
-Structural debt refactor: Screen abstraction, single now-playing update path, unified `item.data` shape, structured error handling, responsive progress bar, and a code split (widgets/handlers/loaders → modules).
+Close ROADMAP **Missing Features / Gaps** #11, #12, #13 — local-file metadata polling,
+robust playlist item resolution, a keyboard binding for `action_play_playlist` — plus an
+in-session bug fix: M3U playlists of radio URLs were mislabeled "Local File" and never got
+live icy-title metadata.
 
 ## Completed This Session
 
-### A. Foundation modules (no behavior change)
-- `src/pytuiplayer/constants.py` — `MAX_PLAYLIST_ITEMS`, `DEFAULT_PLAYLIST_BATCH_SIZE`, `ICON_OK`, `ICON_ERR`
-- `src/pytuiplayer/utils.py` — `parse_extinf`, `resolve_source`, `fmt_mmss` (pure functions)
-- `src/pytuiplayer/types.py` — `ItemData` TypedDict (unified shape for `ListItem.data`)
+### Gap #11 — local-file metadata polling (#897 lines, `src/pytuiplayer/tui_app.py`)
+- `_refresh_metadata` dispatches on a new `_stream_source` flag: streams ->
+  `_refresh_stream_metadata` (icy-title/media-title); local file -> `_refresh_local_metadata`
+  (mutagen `artist - title`, cached per source).
+- New `_refresh_stream_metadata()` (extracted from the old radio block) and `_read_local_tags()`.
+- `play_local` records `_current_local_source` on both branches; URL branch now sets
+  `_stream_source = True`, filesystem branch sets it False.
 
-### B. Behavior-preserving improvements
-- `src/pytuiplayer/widgets.py` — `NowPlaying`, `NowPlayingMessage`, `ProgressBar`, `VolumeIndicator`
-  - `ProgressBar.render()` derives bar width from `self.size.width` (minus padding), clamped to [20, 160] — no longer hardcoded 160
-- `src/pytuiplayer/tui_app.py`:
-  - `update_now_playing` now posts `NowPlayingMessage` only — direct-assignment fallback removed (single path)
-  - Bare `except: pass` replaced with `logger.debug`/`logger.warning`/`logger.exception` (structured logging)
-  - `play_local` reads both `path.get("meta")` and `path.get("title")` for unified `item.data`
-  - `action_stop`, `update_progress`, `play_station` made defensive for headless/screen-less contexts
+### Gap #12 — robust playlist item resolution
+- New `_resolve_playlist_items(local_list)`: tries `items`, then `children`, returns a plain
+  `list`, never raises. `action_play_playlist` uses it.
 
-### C. Screen abstraction
-- `src/pytuiplayer/screens.py` — `ModeScreen` base class + `RadioScreen` / `LocalScreen` subclasses
-  - Mode switching via `self.switch_screen(...)` instead of manual visibility/disabled toggling
-  - Each screen composes shared widgets (Header, Footer, NowPlaying, ProgressBar, controls) + mode-specific content
-  - `on_mount` loads stations/local files via `set_timer(0.1, ...)` after widgets are ready
+### Gap #13 — playlist keyboard binding
+- `BINDINGS` gained `Binding("o", "play_playlist", description="Play playlist from start")`.
 
-### D. Acceptance tests
-- `src/tests/test_feature_02_design_flows.py` — 6 new tests (all pass):
-  - `test_radio_local_use_screens_not_visibility_toggle`
-  - `test_update_now_playing_single_path`
-  - `test_item_data_unified_typeddict`
-  - `test_no_silent_exceptions`
-  - `test_progressbar_uses_widget_width`
-  - `test_code_split_regression`
-- Updated `test_backlog_coverage.py::test_mode_switch_updates_visibility` to verify screen-switch behavior
-- Updated `test_tui_app.py::test_visibility_toggle_hides_unused_widgets` to verify screen-switch behavior
+### Bug fix — M3U radio URL entries must be streams (not "Local File")
+- Root cause: `play_local` routed M3U URL entries through its URL branch which set
+  `currently_playing = "local"` and labeled the source `"Local File"`; `_refresh_metadata`
+  only polled streams when `option_mode == "radio"`, so M3U radio URLs got no metadata.
+- Fix: `_stream_source` flag (True for any network stream — live radio OR an M3U URL entry).
+  `_refresh_metadata` keys off it; `play_local` URL branch sets it + labels `"Radio"`;
+  `action_stop` clears it. Progress-bar title display also keys off `_stream_source`.
 
-### E. Backward compatibility
-- `MusicPlayerApp.MAX_PLAYLIST_ITEMS` class constant retained (aliased to imported value) so existing tests still pass
-- `on_radio_set_changed` wraps screen-switch logic in try/except so unit tests without a screen stack still work
-- `action_stop`/`update_progress`/`play_station` made defensive for headless/screen-less contexts
+### Tests
+- `src/tests/test_feature_03_missing_features.py` — 400 lines, **17 tests** (all pass):
+  - #11: `test_local_metadata_polling_updates_title`, `_is_cached_per_source`,
+    `_falls_back_to_media_title`, `test_radio_metadata_path_still_works` (regression),
+    `test_play_local_records_current_source`
+  - #12: `test_action_play_playlist_resolves_item`, `_without_items_attribute`,
+    `test_resolve_playlist_items_never_raises`, `test_action_play_playlist_reports_empty_playlist`
+  - #13: `test_playlist_keyboard_binding_plays`
+  - Bug fix: `test_play_local_url_is_flagged_stream`, `test_play_local_url_polls_stream_metadata`,
+    `test_play_local_filesystem_is_not_stream`, `test_stop_clears_stream_flag`,
+    `test_update_progress_meta_uses_stream_source`
+  - Dataset: `test_load_real_radio_m3u_populates`, `test_real_radio_m3u_entries_play_as_streams`
+- Updated pre-existing tests to the `_stream_source` contract:
+  `test_backlog_coverage.py::test_refresh_metadata_updates_title_for_radio`,
+  `test_tui_app.py::test_progressbar_shows_radio_meta_when_streaming`,
+  `test_feature_03_missing_features.py::test_radio_metadata_path_still_works`.
+- Added `src/tests/assets/radio_stations_hq.m3u` — the user's real 177-station HQ radio list
+  (CRLF + ISO-8859, `:` in titles). Pinned via `src/tests/assets/.gitattributes` (`* -text`) so
+  git does not normalize CRLF (keeps `load_m3u` parsing reproducible across platforms).
+- Two dataset-driven tests in `test_feature_03_missing_features.py` exercise the real list
+  end-to-end: `test_load_real_radio_m3u_populates` (all 177 entries load as URLs, CRLF and
+  `:` titles handled) and `test_real_radio_m3u_entries_play_as_streams` (selecting an entry
+  plays via the `play_local` URL branch → `_stream_source = True`, labeled "Radio").
+
+### Docs / DB sync
+- `scripts/update_testsuite_db.py` — file description updated; 5 new bug-fix backlog rows
+  (status `done`).
+- `ROADMAP.md` — Missing Features table emptied; feature/03 marked DONE; bug-fix section
+  documented; expected count 74.
 
 ## Tests
-- `uv run pytest -q` → **59 passed in ~9s** (53 original + 6 new acceptance tests)
-- `uv run ruff check .` → All checks passed
+- `uv run pytest -q` → **76 passed in ~9.5s** (59 baseline + 17 new)
+- `uv run ruff check .` → All checks passed!
+- `report_testsuite_db.py` → run #77: collected 76 / passed 76 (no inflation); **34/34 backlog done**
+- Demos: `run_tui_app_demo.py` SUCCESS; `run_radio_demo.py` SUCCESS (live stream)
 
 ## Remaining
-- None for this branch. All 6 acceptance tests pass; original 53 tests still pass.
-- Awaiting user decision on merging `feature/02-fix-design-flows` into `main`.
+- None. All three gaps + the M3U radio bug are fixed and tested (incl. the real-list dataset).
+  Awaiting user decision on commit/merge.
 
 ## Architectural Decisions
-- `constants.py` / `utils.py` / `types.py` are pure (no Textual/mpv imports) for reusability
-- `widgets.py` groups all three shared widgets (no separate package to keep imports simple)
-- `screens.py` uses a base `ModeScreen` class to avoid duplicating the shared widget composition
-- `on_mount` uses `push_screen(RadioScreen())` directly (not deferred) — headless `run_test()` works because the screen stack is ready by then
-- `RadioScreen.on_mount` / `LocalScreen.on_mount` use `set_timer(0.1, ...)` to load data after widgets mount
-- `update_now_playing` uses a single message-posting path; `on_now_playing_message` is the sole handler
-- `ProgressBar` derives bar width from widget size with MIN/MAX clamps for readability
-- Screen-switch logic in `on_radio_set_changed` is wrapped in try/except for test compatibility
+- Source kind is now a dedicated `_stream_source` boolean (network stream vs local file),
+  decoupled from `option_mode`. Rationale: M3U playlists mix URLs and files within the
+  *local* mode, so `option_mode` is the wrong discriminator for metadata polling.
+- `_refresh_metadata` is the single 1s dispatch point — no new timer added; stream vs local
+  logic lives in `_refresh_stream_metadata` / `_refresh_local_metadata`.
+- Local tag reads stay cached per source (`_local_meta_source`) — one mutagen read per track.
+- `_stream_source` is cleared by `action_stop` and set by both `play_station` and the
+  `play_local` URL branch, so every entry point keeps the flag consistent.
 
 ## Next Step
-Branch complete. Next feature should start on a fresh branch off updated `main`
-(`git checkout main && git pull && git checkout -b feature/<next-slug>`), using the
-DB-tracked Test Backlog as the prerequisite checklist.
+Branch is green (tests + ruff + demos + DB). Await the user's go-ahead to commit with the
+`WIP:` convention and/or merge `--no-ff` into `main`.
