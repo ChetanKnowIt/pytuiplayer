@@ -64,9 +64,26 @@ Adds reproducible packaging for end users.
 - No PyPI publish step added (the user asked for packaging + a GitHub Action to package for
   distribution; release assets are attached to a draft GitHub release, which satisfies that).
 
+## CI / Release run results (verified on GitHub)
+- **CI** (`.github/workflows/ci.yml`) on main: first attempt **failed** because the
+  `ubuntu-latest` runner has no `libmpv` (python-mpv import fails at collection). Fixed by
+  `apt-get install libmpv-dev` in the CI job. Second attempt **failed** because the live
+  `test_radio_integration.py` ran (runner has network egress) but mpv could not open the
+  stream socket -> hard assertion. Fixed by skipping that test when `CI` env is set unless
+  `PYTUIP_RADIO_TEST=1`. Final CI run **green** (146 passed, 1 skipped, ruff clean).
+- **Build & Release** (`.github/workflows/build.yml`) on tag `v0.2.0`: **succeeded** —
+  built wheel + sdist + one-file binaries for Linux/macOS/Windows, drafted a GitHub release
+  with all 4 assets. Tag was re-pointed to the final green commit; a second release run
+  produced the final draft `v0.2.0` with: `pytuiplayer` (113 MB, Linux), `pytuiplayer.exe`
+  (15 MB, Windows), `pytuiplayer-0.2.0-py3-none-any.whl` (338 KB), `pytuiplayer-0.2.0.tar.gz`
+  (333 KB). The release preview URL currently resolves under an `untagged-*` slug because the
+  tag was moved after drafting; on publish GitHub relinks it to `v0.2.0`.
+- Local verification: `make build` (wheel+sdist), `scripts/build_pyinstaller.py` (one-file
+  binary rendered the full TUI headlessly), `make lint`, `make clean` all exercised.
+
 ## Next Step
-Merge `feature/11-build-pipeline` to `main` (`--no-ff`) and push, then optionally tag
-`v0.2.0` to exercise the build.yml release workflow. If a PyPI publish is desired later, add a
-`publish` job to build.yml using `pypa/gh-action-pypi-publish` — out of scope for this task.
+The build pipeline is merged to `main` and the `v0.2.0` draft release (4 artifacts) is ready
+for preview in the GitHub Releases tab. To publish: open the draft and click Publish. If a
+PyPI publish is wanted later, add a `publish` job to build.yml with `pypa/gh-action-pypi-publish`.
 Remaining ROADMAP Low Priority items (#2 favorites, #5 configurable keys, #7 visualizer) are
 unscheduled and untouched.
