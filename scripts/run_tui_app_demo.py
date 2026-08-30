@@ -45,8 +45,11 @@ async def main() -> int:
         print(f"[DEMO] app.title = {app.title!r}")
 
         # 3) the NowPlaying widget renders and reflects the idle state
+        # Note: with screen abstraction, the widget is inside the pushed RadioScreen,
+        # so we query from there (not the app's default screen).
+        current_screen = app.screen
         try:
-            now = app.query_one("NowPlaying")
+            now = current_screen.query_one("#now-playing")
         except Exception:
             now = None
         if now is None:

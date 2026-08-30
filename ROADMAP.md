@@ -2,17 +2,11 @@
 
 ## Tech Debt & Drawbacks
 
-### Design Flaws
+### Design Flaws (open)
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 4 | No Screen abstraction — mode switching via manual visibility/disabled toggling | `tui_app.py:348-390,463-518` | Brittle, repetitive, error-prone |
-| 5 | `update_now_playing` dual path (post_message + direct assignment fallback) | `tui_app.py:900-926` | Confusing control flow; hard to debug |
-| 6 | `item.data` shape varies: dict (M3U), dict (local), raw station dict (radio) | Throughout | Requires `isinstance` checks everywhere |
-| 7 | Imports inside method bodies (`asyncio`, `Path`, `DirectoryTree`) | `tui_app.py` (was 745-748) | Resolved — hoisted to module top |
-| 8 | Silent exception swallowing (`try/except: pass`) in most methods | Throughout | Makes debugging extremely difficult |
 | 9 | `load_local_files` only scans top-level directory — no recursive scan | `tui_app.py:532-548` | Nested music folders not supported |
-| 10 | ProgressBar bar width hardcoded to 160 chars | `tui_app.py:242` | Not responsive to terminal width |
 
 ### Missing Features / Gaps
 
@@ -25,7 +19,6 @@
 ---
 
 ## Test Inventory (in `testsuite.db`)
-
 The full test inventory — including the test backlog (missing/integration tests) and their
 done/pending status — lives **exclusively** in a structured SQLite database
 (`testsuite.db` at the repo root). ROADMAP.md stays light; the DB is the single source of
@@ -61,35 +54,12 @@ SELECT * FROM runs ORDER BY id DESC LIMIT 5;                   -- last runs
 
 ## Feature Plan (branch-organized)
 
-Open work is grouped into three feature branches. Each branch is developed and tested on
+Open work is grouped into feature branches. Each branch is developed and tested on
 its own (`feature/NN-slug`), and may merge to `main` only when every test in its plan
 passes (`uv run pytest -q` → green) and `uv run ruff check .` is clean. The test names
 below are the **acceptance criteria** — add them to `src/tests/` (e.g.
-`test_feature_02_design_flows.py`) and mirror them into `testsuite.db` via
+`test_feature_03_missing_features.py`) and mirror them into `testsuite.db` via
 `scripts/update_testsuite_db.py` so the DB tracks each branch's progress.
-
-### feature/02-fix-design-flows
-Closes Design Flaws #4, #5, #6, #8, #10 and Refactoring Candidates #1–#5.
-Structural debt: Screen abstraction, single now-playing update path, unified `item.data`
-shape, structured error handling, responsive progress bar, and a code split (widgets /
-handlers / loaders → modules; `utils.py`; `constants.py`; TypedDict for `item.data`).
-
-**Tests required to mark Done (all must pass):**
-- `test_radio_local_use_screens_not_visibility_toggle` — mode switch mounts
-  `RadioScreen`/`LocalScreen` and hides the other; no manual `display`/`disabled`
-  toggling remains in `on_radio_set_changed`.
-- `test_update_now_playing_single_path` — `update_now_playing` updates the widget only
-  via `NowPlayingMessage`; the direct-assignment fallback is removed and
-  `on_now_playing_message` is the single handler.
-- `test_item_data_unified_typeddict` — `load_local_files`, `load_m3u`, and radio
-  selection all emit `ItemData(source, title, duration, meta)`; consumers no longer
-  need `isinstance` guards on shape.
-- `test_no_silent_exceptions` — bare `except: pass` replaced with
-  `logger.warning`/`logger.exception`; assert expected errors are logged, not swallowed.
-- `test_progressbar_uses_widget_width` — bar length derives from `self.size.width`
-  (minus padding), not a hardcoded 160.
-- `test_code_split_regression` — after extracting modules, all prior tests still pass
-  (behavior unchanged).
 
 ### feature/03-fix-missing-features
 Closes Missing Features / Gaps #11, #12, #13.
@@ -131,19 +101,9 @@ branch owns the remaining net-new medium features — starting with recursive sc
 
 ---
 
-## Refactoring Candidates
-
-1. Split `tui_app.py` — Extract widgets, event handlers, and loaders into separate modules
-2. Create `utils.py` — Move `_parse_extinf`, `_resolve_source`, `fmt_mmss` helpers
-3. Create `constants.py` — Move `MAX_PLAYLIST_ITEMS`, `ICON_OK`, `ICON_ERR`
-4. Standardize error handling — Replace bare `except: pass` with structured logging
-5. Add type hints — `item.data` needs TypedDict or dataclass
-
----
-
 ## Notes
 
-- Run `uv run pytest -q` before and after changes — expect 53 passed (last run: 2026-08-30 on branch `testsuite/01-update-test-backlog`)
+- Run `uv run pytest -q` before and after changes — expect 59 passed (last run: 2026-08-30 on branch `feature/02-fix-design-flows`)
 - Run `uv run ruff check .` for linting
 - All tests use `FakeMPV` injection pattern — maintain this for new tests
 - `PYTUIP_DEBUG=1` enables stack traces on `update_now_playing` calls
@@ -173,6 +133,21 @@ Every feature (and every non-trivial change) is developed on its **own independe
 - **No merge to `main` with failing tests or lint.** If a test must change, the change and its rationale travel together in the same branch.
 - **Document as you go:** update `ROADMAP.md` (mark items Done / add backlog) and `docs/AI_TASK_STATE.md` within the branch so the merge carries its own status.
 
+### Prepare to Commit Checklist (run before committing on a feature branch)
+
+Run these to ensure the commit is reviewable and the merge will be clean:
+
+1. **Tests pass:** `uv run pytest -q` → all passed (the `network` radio test may skip only when offline).
+2. **Lint clean:** `uv run ruff check .` → `All checks passed!`
+3. **Test count sanity:** verify the passed count matches expectations (no accidental triple-counting from conftest hooks).
+4. **Testsuite DB report clean:** `uv run python scripts/report_testsuite_db.py` → verify:
+   - `passed` count matches actual test count (not inflated by setup/call/teardown double-counting)
+   - All new test files have descriptions (non-zero `lines` count)
+   - Backlog items correctly reflect done/pending status
+5. **Review acceptance tests:** each feature's acceptance tests cover the feature's behavior (not just importability).
+6. **Scripts/demos work:** `uv run python scripts/run_tui_app_demo.py` and `uv run python scripts/run_radio_demo.py` boot cleanly.
+7. **Docs in sync:** `ROADMAP.md` and `docs/AI_TASK_STATE.md` reflect the branch's work.
+
 ### Merge / Release Checklist (run before merging a feature branch into `main`)
 
 Run these from the feature branch (and re-run on `main` after the merge) so the next
@@ -192,5 +167,5 @@ feature build always starts from a green, known-good state:
 8. **Next feature:** start the new work on a fresh branch off updated `main`
    (`git checkout main && git pull && git checkout -b feature/<next-slug>`).
 
-> History note: `feature/01-song-duration` was merged to `main` (merge commit `6b417cb`)
-> and pushed. After that, `main` is the known-good baseline for the next feature branch.
+> History note: `feature/01-song-duration` and `feature/02-fix-design-flows` have been
+> merged to `main` and pushed. `main` is the known-good baseline for the next feature branch.

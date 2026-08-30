@@ -189,8 +189,14 @@ def test_explicit_play_and_pause():
 
 
 def test_visibility_toggle_hides_unused_widgets():
+    """Mode switching uses screen abstraction instead of visibility toggling.
+
+    With screens, switching mode changes the active screen (RadioScreen/LocalScreen)
+    rather than toggling widget visibility directly.
+    """
     import asyncio
     import types
+    from unittest.mock import patch
 
     app = MusicPlayerApp()
     # fake widgets to capture display/visible/disabled changes
@@ -225,19 +231,27 @@ def test_visibility_toggle_hides_unused_widgets():
 
     app.query_one = query_one
 
+    screen_switches = []
+
+    def mock_switch(screen):
+        screen_switches.append(type(screen).__name__)
+
+    class FakeScreen:
+        pass
+
     # simulate switching to local
     event = types.SimpleNamespace(pressed=types.SimpleNamespace(id="local-option"))
-    asyncio.run(app.on_radio_set_changed(event))
+    with patch.object(type(app), "screen", new_callable=lambda: property(lambda self: FakeScreen())), \
+         patch.object(app, "switch_screen", side_effect=mock_switch):
+        asyncio.run(app.on_radio_set_changed(event))
+        assert app.option_mode == "local"
+        assert "LocalScreen" in screen_switches
 
-    assert local.visible is True or local.display is True
-    assert station.visible is False or station.display is False
-
-    # switch back to radio
-    event = types.SimpleNamespace(pressed=types.SimpleNamespace(id="radio-option"))
-    asyncio.run(app.on_radio_set_changed(event))
-
-    assert station.visible is True or station.display is True
-    assert local.visible is False or local.display is False
+        # switch back to radio
+        event = types.SimpleNamespace(pressed=types.SimpleNamespace(id="radio-option"))
+        asyncio.run(app.on_radio_set_changed(event))
+        assert app.option_mode == "radio"
+        assert "RadioScreen" in screen_switches
 
 
 def test_progressbar_shows_radio_meta_when_streaming():

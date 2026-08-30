@@ -513,7 +513,13 @@ def test_mode_switch_stops_playback():
 
 
 def test_mode_switch_updates_visibility():
-    """#4 — a mode switch toggles the visibility of all three list widgets."""
+    """#4 — a mode switch changes the mode and triggers screen switch.
+
+    With the screen abstraction, mode switching no longer toggles widget
+    visibility directly; instead it switches between RadioScreen and LocalScreen.
+    """
+    from unittest.mock import patch
+
     app = _stub_app(MusicPlayerApp())
     app.option_mode = "radio"
 
@@ -529,18 +535,27 @@ def test_mode_switch_updates_visibility():
     }
     app.query_one = lambda sel, *a, **k: widgets[sel]
 
+    screen_switches = []
+
+    def mock_switch(screen):
+        screen_switches.append(type(screen).__name__)
+
+    class FakeScreen:
+        pass
+
     def switch_to(option_id):
         event = types.SimpleNamespace(pressed=types.SimpleNamespace(id=option_id))
         asyncio.run(app.on_radio_set_changed(event))
 
-    # radio -> local: station hidden, local + tree visible
-    switch_to("local-option")
-    assert widgets["#station-list"].visible is False
-    assert widgets["#local-list"].visible is True
-    assert widgets["#directory-tree"].visible is True
+    # Patch screen property and switch_screen
+    with patch.object(type(app), "screen", new_callable=lambda: property(lambda self: FakeScreen())), \
+         patch.object(app, "switch_screen", side_effect=mock_switch):
+        # radio -> local: mode changes to local, screen switches to LocalScreen
+        switch_to("local-option")
+        assert app.option_mode == "local"
+        assert "LocalScreen" in screen_switches
 
-    # local -> radio: station visible, local + tree hidden
-    switch_to("radio-option")
-    assert widgets["#station-list"].visible is True
-    assert widgets["#local-list"].visible is False
-    assert widgets["#directory-tree"].visible is False
+        # local -> radio: mode changes to radio, screen switches to RadioScreen
+        switch_to("radio-option")
+        assert app.option_mode == "radio"
+        assert "RadioScreen" in screen_switches

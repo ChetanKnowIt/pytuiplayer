@@ -10,7 +10,12 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 
 | File | Role |
 |------|------|
-| `src/pytuiplayer/tui_app.py` | Main App + all widgets + business logic (single-file monolith) |
+| `src/pytuiplayer/tui_app.py` | Main App + business logic (thin orchestrator) |
+| `src/pytuiplayer/widgets.py` | NowPlaying, ProgressBar, VolumeIndicator widgets |
+| `src/pytuiplayer/screens.py` | ModeScreen, RadioScreen, LocalScreen |
+| `src/pytuiplayer/constants.py` | MAX_PLAYLIST_ITEMS, ICON_OK, ICON_ERR |
+| `src/pytuiplayer/utils.py` | Pure helpers: parse_extinf, resolve_source, fmt_mmss |
+| `src/pytuiplayer/types.py` | ItemData TypedDict |
 | `src/pytuiplayer/mpv_player.py` | Thin wrapper around `python-mpv` |
 | `src/pytuiplayer/station_player.py` | Station list manager |
 | `src/pytuiplayer/stations.json` | Default radio stations |
@@ -21,6 +26,8 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/tests/` | Pytest test suite |
 | `src/tests/testsuite_db.py` | SQLite test-inventory DB helpers (schema + idempotent upserts) |
 | `src/tests/test_backlog_coverage.py` | ROADMAP Test Backlog coverage (22 tests) |
+| `src/tests/test_feature_02_design_flows.py` | feature/02 acceptance tests (6 tests) |
+| `src/tests/test_tui_app.py` | App actions, loaders, visibility, regressions (21 tests) |
 | `scripts/` | Dev scripts and manual test scripts |
 | `scripts/update_testsuite_db.py` | Rebuild/enrich `testsuite.db` (files + backlog mirror) |
 | `scripts/report_testsuite_db.py` | Print the test inventory / backlog / runs |
@@ -30,26 +37,50 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 
 ### Textual App
 
-Single `MusicPlayerApp(App)` class in `tui_app.py`. No Screen abstraction — mode switching is done via widget visibility toggling (`display`, `visible`, `disabled`).
+`MusicPlayerApp(App)` in `tui_app.py` is a thin orchestrator. Business logic lives here, but widgets, screens, constants, helpers, and types are imported from their own modules:
 
-### Widgets (all defined in tui_app.py)
+- `widgets.py` — `NowPlaying`, `NowPlayingMessage`, `ProgressBar`, `VolumeIndicator`
+- `screens.py` — `ModeScreen` (base), `RadioScreen`, `LocalScreen`
+- `constants.py` — `MAX_PLAYLIST_ITEMS`, `DEFAULT_PLAYLIST_BATCH_SIZE`, `ICON_OK`, `ICON_ERR`
+- `utils.py` — `parse_extinf`, `resolve_source`, `fmt_mmss` (pure functions)
+- `types.py` — `ItemData` TypedDict
 
-| Widget | Type | Location |
-|--------|------|----------|
-| `NowPlaying(Static)` | Reactive | `tui_app.py:82` |
-| `ProgressBar(Static)` | Reactive | `tui_app.py:200` |
-| `VolumeIndicator(Static)` | Reactive | `tui_app.py:237` |
+`MusicPlayerApp.compose()` yields only `Header` + `Footer`; the active screen composes everything else. `MusicPlayerApp.query_one()` is overridden to delegate to the active screen so widgets inside pushed screens are found.
+
+### Screen Abstraction
+
+Mode switching uses Textual's screen stack (`RadioScreen` / `LocalScreen`), not manual visibility toggling. `RadioScreen` and `LocalScreen` extend `ModeScreen`, which composes shared widgets (Header, Footer, NowPlaying, ProgressBar, controls, RadioSet) and calls `compose_mode_content()` for mode-specific content.
+
+```
+MusicPlayerApp
+  └─ push_screen(RadioScreen)   # radio mode → station list
+  └─ push_screen(LocalScreen)   # local mode → directory tree + local list
+```
+
+`ModeScreen` uses a `_radio_value` property (overridden by subclasses) to set which RadioButton is selected. `on_mount` syncs shared widget state from the app and defers data loading via `set_timer(0.1, ...)` so widgets are ready before population.
+
+### Widgets (in widgets.py)
+
+| Widget | Type | Purpose |
+|--------|------|---------|
+| `NowPlaying(Static)` | Reactive | Title, source, countdown, marquee scrolling |
+| `NowPlayingMessage(Message)` | Message | Single update path from `update_now_playing()` to `NowPlaying` |
+| `ProgressBar(Static)` | Reactive | Progress bar (responsive width), elapsed/total, radio metadata |
+| `VolumeIndicator(Static)` | Reactive | Volume/mute display |
 
 ### State Management
 
-- **Reactive state**: Textual `reactive` descriptor on widget attributes (`title`, `state`, `source`, `progress`, `duration`, `volume`, `muted`, `_offset`)
+- **Reactive widget state**: Textual `reactive` descriptor on widget attributes (`title`, `state`, `progress`, `duration`, `volume`, `muted`, `_offset`)
 - **App-level state**: Plain attributes on `MusicPlayerApp` (`volume`, `muted`, `current_title`, `option_mode`, `currently_playing`, `_prev_volume`)
-- **Message pattern**: `NowPlayingMessage(Message)` posted from `update_now_playing()` to `NowPlaying` widget; handler `on_now_playing_message` updates widget fields
+- **Unified item.data**: `ItemData(source, title, duration, meta)` TypedDict — `load_local_files` and `load_m3u` both emit this shape. Radio stations still use the raw `{"name":..., "url":...}` dict.
+- **Message pattern**: `NowPlayingMessage(Message)` posted from `update_now_playing()` to `NowPlaying` widget; handler `on_now_playing_message` updates widget fields (single path — no direct-assignment fallback)
 
 ### Event Flow
 
-- `on_mount()`: Loads stations JSON, initializes volume, sets up polling intervals
-- `on_radio_set_changed()`: Mode switching (radio ↔ local) with visibility toggling
+- `on_mount()`: Initializes volume, sets up polling intervals, pushes `RadioScreen`
+- `RadioScreen.on_mount`: Syncs shared widget state, loads stations via `set_timer(0.1, ...)` (reloads if `app.stations` is None OR list is empty, handling switch-back)
+- `LocalScreen.on_mount`: Syncs shared widget state, loads local files via `set_timer(0.1, ...)`
+- `on_radio_set_changed()`: Mode switching via `switch_screen(RadioScreen)` / `switch_screen(LocalScreen)`
 - `on_button_pressed()`: Play/Pause/Stop button handlers
 - `on_list_view_selected()`: Station/local list selection
 - `on_directory_tree_file_selected()`: File browser selection (JSON/M3U/MP3)
@@ -84,8 +115,8 @@ Single file: `musicplayer_tui.css`. Dark theme (`#0b0b0b` background, `#f0e6c8` 
 
 No runtime database — the app is file-based:
 - Radio: JSON station files (`stations.json`), loaded via `anyio.open_file` async I/O
-- Local: `load_local_files()` iterates directory for `.mp3`, creates `ListItem` with `item.data = {"source": Path, "title": str, "duration": None}`
-- M3U: `load_m3u()` parses `#EXTINF` metadata, resolves relative paths, batched mounting (200/batch, max 2000 via `MAX_PLAYLIST_ITEMS`)
+- Local: `load_local_files()` iterates directory for `.mp3`, creates `ListItem` with `ItemData(source=Path, title=str, duration=None)`
+- M3U: `load_m3u()` parses `#EXTINF` metadata, resolves relative paths, batched mounting (200/batch, max 2000 via `MAX_PLAYLIST_ITEMS`), emits `ItemData(source, title, duration, meta)`
 
 Note: the test suite maintains a *generated* SQLite inventory at the repo root
 (`testsuite.db`) for tracking tests/backlog/runs. It is gitignored and refreshed on
@@ -108,10 +139,39 @@ every `uv run pytest` run (see `src/tests/testsuite_db.py`). It is not app data.
 - Pattern: Inject `FakeMPV` / `FakeMPVPlayer` via `app.mpv = ...`
 - Stub `app.query_one` and `app.update_now_playing` to avoid Textual DOM
 - Use `asyncio.run()` for async methods (pytest-asyncio is NOT installed)
-- Run: `uv run pytest -q` from repo root (expects 53 passed)
+- Run: `uv run pytest -q` from repo root (expects 59 passed)
 - Every pytest run also refreshes the SQLite inventory `testsuite.db`; view it with
   `uv run python scripts/report_testsuite_db.py` (rebuild/enrich via
   `scripts/update_testsuite_db.py`). The `network`-marked radio test auto-skips offline.
+
+### Testsuite DB (testsuite.db)
+
+The full test inventory — including the test backlog (missing/integration tests) and their
+done/pending status — lives **exclusively** in a structured SQLite database
+(`testsuite.db` at the repo root). ROADMAP.md stays light; the DB is the single source of
+truth for everything test-related.
+
+- **Schema:** `files`, `tests`, `runs`, `backlog`, `meta` (see `src/tests/testsuite_db.py`).
+  Upsert keyed on `(file, name)` — reruns are idempotent.
+- **Auto-refresh:** every `uv run pytest` run writes the `tests` + `runs` tables via
+  the hook in `src/tests/conftest.py`. Only the `call` phase is counted (not setup/teardown)
+  to avoid triple-counting.
+- **Enrichment:** `scripts/update_testsuite_db.py` refreshes `files` (line counts +
+  descriptions) and mirrors the Test Backlog into `backlog` (status preserved).
+- **Reporting:** `scripts/report_testsuite_db.py` prints the inventory / backlog / runs.
+
+```bash
+uv run pytest -q                       # runs tests AND refreshes testsuite.db
+uv run python scripts/update_testsuite_db.py   # enrich files + sync backlog
+uv run python scripts/report_testsuite_db.py    # print the inventory
+```
+
+```sql
+-- Quick queries against testsuite.db
+SELECT file, COUNT(*) AS n FROM tests GROUP BY file ORDER BY file;
+SELECT status, COUNT(*) FROM backlog GROUP BY status;          -- done vs pending
+SELECT * FROM runs ORDER BY id DESC LIMIT 5;                   -- last runs
+```
 
 ## Linting/Formatting
 
@@ -161,11 +221,12 @@ Profiled methods include:
 
 1. **`fetch_duration` is an `async def` class method** spawned via `self.run_worker(self.fetch_duration, item)` from `load_local_files`. Keep its worker-trigger flag named `self.fetch_duration_eager` — never name a spawned worker the same as a bool flag.
 2. `max_playlist_items` is assigned exactly once in `__init__`, from the `MAX_PLAYLIST_ITEMS` class constant (2000). Do not re-assign it elsewhere.
-3. **Silent exception swallowing**: Most methods have bare `try/except: pass` — intentional to keep TUI alive, but makes debugging hard.
-4. **No Screen abstraction**: Mode switching via manual visibility toggling, not Textual's Screen stack.
-5. **`update_now_playing` dual path**: Posts a message AND has direct-assignment fallback — both must work.
-6. **`item.data` shape varies**: Can be a dict (`load_m3u`), a dict (`load_local_files`), or a raw station dict — always use `isinstance` checks.
-7. **`_meta_label` attribute**: Set on items by `load_m3u` (line 652) but NOT by `load_local_files` — tests must account for this difference.
+3. **Structured error handling**: Methods use `logger.debug`/`logger.warning`/`logger.exception` instead of bare `except: pass`. The TUI stays alive but errors are visible in logs.
+4. **Screen abstraction**: Mode switching uses `RadioScreen`/`LocalScreen` via `switch_screen()`, not manual visibility toggling. `app.query_one` delegates to the active screen.
+5. **`update_now_playing` single path**: Posts a message only — no direct-assignment fallback.
+6. **`item.data` shape**: Unified `ItemData(source, title, duration, meta)` TypedDict. `load_local_files` and `load_m3u` both emit this shape. Radio stations use the raw `{"name":..., "url":...}` dict (not ItemData).
+7. **`_meta_label` attribute**: Set on items by `load_m3u` but NOT by `load_local_files` — tests must account for this difference.
+8. **Station loading on RadioScreen**: `RadioScreen.on_mount` reloads stations if `app.stations` is None OR if `station_list.children` is empty (handles switch-back from LocalScreen).
 
 ## Rules for Modifying Existing Components
 
@@ -176,13 +237,31 @@ Profiled methods include:
 5. Test both radio and local mode paths.
 6. Run `uv run pytest -q` and `uv run ruff check .` before finishing.
 7. Add `@profile` / `@profile_async` decorators to new render methods, event handlers, and async operations.
+8. When adding a new test file, add its description to `FILE_DESCRIPTIONS` in `scripts/update_testsuite_db.py`.
 
 ## Rules for Adding New Components
 
-1. Add widgets to `tui_app.py` (no separate widget module currently exists).
-2. Use `reactive` for widget state that triggers re-render.
-3. Use `Message` subclasses for cross-widget communication.
-4. Add corresponding keyboard bindings to `BINDINGS` list.
-5. Add tests in `src/tests/` following the `FakeMPV` injection pattern.
-6. Update CSS in `musicplayer_tui.css` for new widget IDs.
-7. Add `@profile` decorator to render methods and event handlers.
+1. Add widgets to `widgets.py` (not `tui_app.py`).
+2. Add screens to `screens.py` (not `tui_app.py`).
+3. Use `reactive` for widget state that triggers re-render.
+4. Use `Message` subclasses for cross-widget communication.
+5. Add corresponding keyboard bindings to `BINDINGS` list.
+6. Add tests in `src/tests/` following the `FakeMPV` injection pattern.
+7. Update CSS in `musicplayer_tui.css` for new widget IDs.
+8. Add `@profile` decorator to render methods and event handlers.
+
+## Prepare to Commit Checklist
+
+Before committing on a feature branch, run these to ensure the commit is reviewable:
+
+1. **Tests pass:** `uv run pytest -q` → all passed (the `network` radio test may skip only when offline).
+2. **Lint clean:** `uv run ruff check .` → `All checks passed!`
+3. **Test count sanity:** verify the passed count matches expectations (no accidental triple-counting from conftest hooks — each test's setup/call/teardown should count as 1, not 3).
+4. **Testsuite DB report clean:** `uv run python scripts/report_testsuite_db.py` → verify:
+   - `passed` count matches actual test count (not inflated by setup/call/teardown double-counting)
+   - All new test files have descriptions (non-zero `lines` count)
+   - Backlog items correctly reflect done/pending status
+5. **Review acceptance tests:** each feature's acceptance tests cover the feature's behavior (not just importability). Verify each test would fail if the feature were removed.
+6. **Scripts/demos work:** `uv run python scripts/run_tui_app_demo.py` and `uv run python scripts/run_radio_demo.py` boot cleanly.
+7. **Entry point works:** `uv run pytuiplayer` launches the TUI.
+8. **Docs in sync:** `ROADMAP.md` and `docs/AI_TASK_STATE.md` reflect the branch's work.
