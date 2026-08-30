@@ -1,89 +1,67 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`feature/03-fix-missing-features` — **MERGED to `main`** (commit `c40cb9e`, `--no-ff`, pushed). `main` is the known-good baseline: 76 tests, ruff clean.
+`feature/04-update-medium-priority` (branched off `main` @ `c40cb9e`, known-good baseline: 76 tests, ruff clean)
 
 ## Purpose
-Close ROADMAP **Missing Features / Gaps** #11, #12, #13 — local-file metadata polling,
-robust playlist item resolution, a keyboard binding for `action_play_playlist` — plus an
-in-session bug fix: M3U playlists of radio URLs were mislabeled "Local File" and never got
-live icy-title metadata.
+Close ROADMAP **Medium Priority #1** — recursive directory scanning in `load_local_files`.
+Nested music folders were not supported (only the top-level directory was scanned).
+Remaining medium items (search/filter, favorites, history, shuffle/repeat, configurable
+bindings, export, album art) are explicitly left unscheduled per the branch's scope.
 
 ## Completed This Session
 
-### Gap #11 — local-file metadata polling (#897 lines, `src/pytuiplayer/tui_app.py`)
-- `_refresh_metadata` dispatches on a new `_stream_source` flag: streams ->
-  `_refresh_stream_metadata` (icy-title/media-title); local file -> `_refresh_local_metadata`
-  (mutagen `artist - title`, cached per source).
-- New `_refresh_stream_metadata()` (extracted from the old radio block) and `_read_local_tags()`.
-- `play_local` records `_current_local_source` on both branches; URL branch now sets
-  `_stream_source = True`, filesystem branch sets it False.
-
-### Gap #12 — robust playlist item resolution
-- New `_resolve_playlist_items(local_list)`: tries `items`, then `children`, returns a plain
-  `list`, never raises. `action_play_playlist` uses it.
-
-### Gap #13 — playlist keyboard binding
-- `BINDINGS` gained `Binding("o", "play_playlist", description="Play playlist from start")`.
-
-### Bug fix — M3U radio URL entries must be streams (not "Local File")
-- Root cause: `play_local` routed M3U URL entries through its URL branch which set
-  `currently_playing = "local"` and labeled the source `"Local File"`; `_refresh_metadata`
-  only polled streams when `option_mode == "radio"`, so M3U radio URLs got no metadata.
-- Fix: `_stream_source` flag (True for any network stream — live radio OR an M3U URL entry).
-  `_refresh_metadata` keys off it; `play_local` URL branch sets it + labels `"Radio"`;
-  `action_stop` clears it. Progress-bar title display also keys off `_stream_source`.
+### Medium #1 — recursive local-file scanning (`src/pytuiplayer/tui_app.py`, load_local_files)
+- `load_local_files` rewrote the linear `path.iterdir()` loop into an `os.walk(path)` traversal
+  (tui_app.py:254-305). Nested `.mp3` files at any depth are now collected.
+- Batched mounting preserved: items accumulate in a `batch` and `await local_list.mount(*batch)`
+  every `playlist_batch_size` items, yielding `await asyncio.sleep(0)` between batches so the UI
+  stays responsive (mirrors `load_m3u`'s batching).
+- `max_playlist_items` cap honored: the walk stops entirely once `count >= max_playlist_items`
+  (inner break + `for/else` outer break), flushing any partial batch first.
+- `fetch_duration` workers still fire per loaded item (now iterated from `self.local_items.values()`
+  after the walk, instead of one-per-file inline) — unchanged behavior, just after batching.
 
 ### Tests
-- `src/tests/test_feature_03_missing_features.py` — 400 lines, **17 tests** (all pass):
-  - #11: `test_local_metadata_polling_updates_title`, `_is_cached_per_source`,
-    `_falls_back_to_media_title`, `test_radio_metadata_path_still_works` (regression),
-    `test_play_local_records_current_source`
-  - #12: `test_action_play_playlist_resolves_item`, `_without_items_attribute`,
-    `test_resolve_playlist_items_never_raises`, `test_action_play_playlist_reports_empty_playlist`
-  - #13: `test_playlist_keyboard_binding_plays`
-  - Bug fix: `test_play_local_url_is_flagged_stream`, `test_play_local_url_polls_stream_metadata`,
-    `test_play_local_filesystem_is_not_stream`, `test_stop_clears_stream_flag`,
-    `test_update_progress_meta_uses_stream_source`
-  - Dataset: `test_load_real_radio_m3u_populates`, `test_real_radio_m3u_entries_play_as_streams`
-- Updated pre-existing tests to the `_stream_source` contract:
-  `test_backlog_coverage.py::test_refresh_metadata_updates_title_for_radio`,
-  `test_tui_app.py::test_progressbar_shows_radio_meta_when_streaming`,
-  `test_feature_03_missing_features.py::test_radio_metadata_path_still_works`.
-- Added `src/tests/assets/radio_stations_hq.m3u` — the user's real 177-station HQ radio list
-  (CRLF + ISO-8859, `:` in titles). Pinned via `src/tests/assets/.gitattributes` (`* -text`) so
-  git does not normalize CRLF (keeps `load_m3u` parsing reproducible across platforms).
-- Two dataset-driven tests in `test_feature_03_missing_features.py` exercise the real list
-  end-to-end: `test_load_real_radio_m3u_populates` (all 177 entries load as URLs, CRLF and
-  `:` titles handled) and `test_real_radio_m3u_entries_play_as_streams` (selecting an entry
-  plays via the `play_local` URL branch → `_stream_source = True`, labeled "Radio").
+- `src/tests/test_feature_04_medium_priority.py` — 137 lines, **4 tests** (all pass):
+  - `test_load_local_files_recursive` — 4-level nested tree; all 4 `.mp3`s found, `.txt` ignored,
+    every item emits unified `ItemData` (source/title/duration).
+  - `test_load_local_files_recursive_respects_max_playlist_items` — `max_playlist_items=3`,
+    `batch_size=2` over a 15-file tree → exactly 3 items loaded.
+  - `test_load_local_files_recursive_batched_mounting` — 10 files, `batch_size=4` → mount batches [4,4,2].
+  - `test_load_local_files_top_level_still_works` — flat directory (no subdirs) behaves as before
+    (regression guard).
 
 ### Docs / DB sync
-- `scripts/update_testsuite_db.py` — file description updated; 5 new bug-fix backlog rows
-  (status `done`).
-- `ROADMAP.md` — Missing Features table emptied; feature/03 marked DONE; bug-fix section
-  documented; expected count 74.
+- `scripts/update_testsuite_db.py` — file description added; 5 new backlog rows (Medium #1, `done`,
+  including the worker-crash regression).
+- `ROADMAP.md` — Design Flaw #9 marked closed (`tui_app.py:254-305`); feature/04 section marked DONE;
+  expected count 81; follow-up medium items noted as unscheduled.
 
 ## Tests
-- `uv run pytest -q` → **76 passed in ~9.5s** (59 baseline + 17 new)
+- `uv run pytest -q` → **81 passed in ~9.1s** (76 baseline + 5 new: 4 recursive + 1 worker-crash regression)
 - `uv run ruff check .` → All checks passed!
-- `report_testsuite_db.py` → run #77: collected 76 / passed 76 (no inflation); **34/34 backlog done**
-- Demos: `run_tui_app_demo.py` SUCCESS; `run_radio_demo.py` SUCCESS (live stream)
+- `report_testsuite_db.py` → run #83: collected 81 / passed 81 (no inflation); **39/39 backlog done**
+- Reproduced the real Radio->Local switch under `run_test()`: local-list mounts, no crash.
+- Demos not changed by this branch; prior `run_tui_app_demo.py` / `run_radio_demo.py` still green.
 
 ## Remaining
-- None. All three gaps + the M3U radio bug are fixed and tested (incl. the real-list dataset).
+- None for this branch. Medium #1 + the Radio->Local crash fix are implemented and tested.
   Awaiting user decision on commit/merge.
 
 ## Architectural Decisions
-- Source kind is now a dedicated `_stream_source` boolean (network stream vs local file),
-  decoupled from `option_mode`. Rationale: M3U playlists mix URLs and files within the
-  *local* mode, so `option_mode` is the wrong discriminator for metadata polling.
-- `_refresh_metadata` is the single 1s dispatch point — no new timer added; stream vs local
-  logic lives in `_refresh_stream_metadata` / `_refresh_local_metadata`.
-- Local tag reads stay cached per source (`_local_meta_source`) — one mutagen read per track.
-- `_stream_source` is cleared by `action_stop` and set by both `play_station` and the
-  `play_local` URL branch, so every entry point keeps the flag consistent.
+- Used `os.walk` (not `path.rglob`) so batching + the `max_playlist_items` early-exit can be
+  controlled precisely mid-traversal; `rglob` would force collecting everything before slicing.
+- Sorting `files` per directory keeps load order deterministic and stable across runs/filesystems.
+- `fetch_duration` workers are spawned after the full walk (not inline) — slightly changes timing
+  but keeps the hot loop free of per-file `run_worker` overhead and is equivalent in result.
+- Non-`.mp3` files are skipped (unchanged filter), so a `.txt`/`README` inside a music folder is
+  ignored; this keeps `ItemData` shape consistent with the prior flat-loader contract.
+- **`run_worker` must receive a `functools.partial(self.fetch_duration, item)` with `exit_on_error=False`**
+  — Textual's `run_worker(work, name, ...)` treats the 2nd positional as the worker *name*, NOT an arg
+  to `work`. The old `run_worker(self.fetch_duration, item)` passed `item` as `name`, so `fetch_duration()`
+  ran with no `item` and crashed the TUI on Radio->Local switch. See Pitfall #16.
 
 ## Next Step
-Branch is green (tests + ruff + demos + DB). Await the user's go-ahead to commit with the
-`WIP:` convention and/or merge `--no-ff` into `main`.
+Branch is green (tests + ruff + DB + reproduced switch). Await the user's go-ahead to commit with the
+`WIP:` convention and/or merge `--no-ff` into `main` (per ROADMAP Merge Checklist).

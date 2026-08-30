@@ -539,10 +539,16 @@ def test_fetch_duration_method_updates_item_data(tmp_path: Path, monkeypatch: Mo
 
 
 def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: MonkeyPatch):
-    """Regression: load_local_files must call the fetch_duration worker method,
-    NOT a boolean flag. With the old bug (self.fetch_duration=False) this raised
-    'bool object is not callable'."""
+    """Regression: load_local_files must call the fetch_duration worker method via a
+    bound partial (NOT a boolean flag, and NOT passing the item as run_worker's `name`).
+
+    With the old bug (self.fetch_duration=False) this raised 'bool object is not callable'.
+    A subtler bug passed `item` as run_worker's 2nd positional (the worker *name*), so
+    fetch_duration ran with no `item` and crashed the TUI — fixed by binding via partial
+    and setting exit_on_error=False.
+    """
     import asyncio
+    from functools import partial
 
     app = MusicPlayerApp()
     app.update_now_playing = lambda *a, **k: None
@@ -559,9 +565,10 @@ def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: M
 
     # Replace run_worker so we capture the coroutine without a live app loop
     captured = {}
-    def fake_run_worker(work, *args):
+    def fake_run_worker(work, *args, **kwargs):
         captured["work"] = work
         captured["args"] = args
+        captured["kwargs"] = kwargs
         return None
     app.run_worker = fake_run_worker
 
@@ -575,8 +582,14 @@ def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: M
     # The list must have one item and the duration worker must have been called
     assert len(fake.items) == 1
     assert captured.get("work") is not None
-    assert captured["work"].__func__ is app.fetch_duration.__func__
-    assert len(captured.get("args", ())) == 1
+    # The work must be a partial that wraps fetch_duration with the item bound.
+    assert isinstance(captured["work"], partial)
+    assert captured["work"].func.__func__ is MusicPlayerApp.fetch_duration
+    assert captured["work"].args == (app.local_items[mp3],)
+    # The item must NOT be passed as run_worker's positional `name`, and the worker
+    # must be allowed to fail without crashing the TUI.
+    assert captured.get("args", ()) == ()
+    assert captured.get("kwargs", {}).get("exit_on_error") is False
 
 
 def test_populate_missing_durations_handles_local_path_source(tmp_path: Path, monkeypatch: MonkeyPatch):
