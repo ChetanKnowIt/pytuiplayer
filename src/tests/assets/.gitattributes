@@ -1,0 +1,2 @@
+# Test fixtures: keep exact bytes (CRLF + ISO-8859) so load_m3u parsing is reproducible.
+* -text

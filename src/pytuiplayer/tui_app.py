@@ -71,6 +71,7 @@ class MusicPlayerApp(App):
         Binding("+", "volume_up", description="Volume +"),
         Binding("-", "volume_down", description="Volume -"),
         Binding("m", "toggle_mute", description="Mute toggle"),
+        Binding("o", "play_playlist", description="Play playlist from start"),
     ]
 
     def query_one(self, selector, *args, **kwargs):
@@ -85,6 +86,7 @@ class MusicPlayerApp(App):
         self.mpv = MPVPlayer()
         self.stations = None
         self.currently_playing = None
+        self._stream_source = False  # True when a network stream (radio/M3U URL) is playing
         self.option_mode = "radio"  # default
         self.stations_file = Path(__file__).parent / "stations.json"
         self.current_title = "Nothing playing"
@@ -98,6 +100,10 @@ class MusicPlayerApp(App):
         self.max_playlist_items = MAX_PLAYLIST_ITEMS
         self.playlist_batch_size = DEFAULT_PLAYLIST_BATCH_SIZE
         self.fetch_duration_eager = False  # set True for eager duration fetch at load
+
+        # Local-file metadata polling state (see _refresh_local_metadata)
+        self._current_local_source = None
+        self._local_meta_source = None
 
     # Maximum number of playlist items to load by default (safety for very large M3U files)
     MAX_PLAYLIST_ITEMS = MAX_PLAYLIST_ITEMS
@@ -525,17 +531,32 @@ class MusicPlayerApp(App):
 
     @profile
     def _refresh_metadata(self):
-        """Poll MPV for stream metadata (icy-title / media-title) when radio is playing."""
+        """Poll for stream/file metadata and update the Now Playing title.
+
+        A *stream* (live radio, or an M3U entry that is a URL) is polled for mpv's
+        ``icy-title`` / ``media-title``. A *local file* has its tags read via mutagen
+        (falling back to mpv's media-title). Whether to poll as a stream is decided by
+        ``self._stream_source`` — not ``option_mode`` — so M3U playlists containing
+        radio station URLs are treated as streams and get live metadata.
+        """
+        if getattr(self, "_stream_source", False):
+            self._refresh_stream_metadata()
+            return
+        if getattr(self, "currently_playing", None) == "local":
+            self._refresh_local_metadata()
+            return
+
+    @profile
+    def _refresh_stream_metadata(self):
+        """Poll a live stream for its ``icy-title`` / ``media-title`` and update the title."""
         try:
-            if self.option_mode != "radio":
-                return
-            if getattr(self, "currently_playing", None) != "radio":
+            if not getattr(self, "_stream_source", False):
                 return
             player = getattr(self.mpv, "player", None)
-            meta = None
             if player is None:
                 return
             # try property API
+            meta = None
             if hasattr(player, "get_property"):
                 try:
                     meta = player.get_property("icy-title") or player.get_property(
@@ -552,7 +573,57 @@ class MusicPlayerApp(App):
                 self.current_title = meta
                 self.update_now_playing(meta, "Radio", "▶")
         except Exception:
-            logger.debug("_refresh_metadata failed", exc_info=True)
+            logger.debug("_refresh_stream_metadata failed", exc_info=True)
+
+    @profile
+    def _refresh_local_metadata(self):
+        """Read tags for the currently playing local file and update the title.
+
+        Only does work when a new local source starts playing (the resolved title is
+        cached per source), so the 1s poll stays cheap.
+        """
+        if getattr(self, "currently_playing", None) != "local":
+            return
+        if getattr(self, "_stream_source", False):
+            return
+        source = getattr(self, "_current_local_source", None)
+        if not source:
+            return
+        if getattr(self, "_local_meta_source", None) == str(source):
+            return
+        self._local_meta_source = str(source)
+
+        title = self._read_local_tags(source)
+        if not title:
+            player = getattr(self.mpv, "player", None)
+            if player is not None and hasattr(player, "get_property"):
+                try:
+                    title = player.get_property("media-title")
+                except Exception:
+                    logger.debug("media-title read failed", exc_info=True)
+        if title and title != self.current_title:
+            self.current_title = title
+            self.update_now_playing(title, "Local File", "▶")
+
+    @profile
+    def _read_local_tags(self, source) -> str | None:
+        """Return ``artist - title`` (or the best available) from a file's tags."""
+        try:
+            info = MutagenFile(str(source), easy=True)
+        except Exception:
+            logger.debug("mutagen tag read failed for %s", source, exc_info=True)
+            return None
+        if not info:
+            return None
+        try:
+            artist = (info.get("artist") or [None])[0]
+            track = (info.get("title") or [None])[0]
+        except Exception:
+            logger.debug("unexpected mutagen tag shape for %s", source, exc_info=True)
+            return None
+        if artist and track:
+            return f"{artist} - {track}"
+        return track or None
 
     @profile_async
     async def _load_json(self, path: Path) -> Any:
@@ -578,8 +649,8 @@ class MusicPlayerApp(App):
             return
         try:
             if (
-                getattr(self, "option_mode", "radio") == "radio"
-                and getattr(self, "currently_playing", None) == "radio"
+                getattr(self, "_stream_source", False)
+                and getattr(self, "currently_playing", None) is not None
             ):
                 bar.meta = self.current_title or ""
             else:
@@ -629,6 +700,8 @@ class MusicPlayerApp(App):
     @profile
     def action_stop(self):
         self.mpv.stop()
+        self.currently_playing = None
+        self._stream_source = False
         self.current_title = "Nothing playing"
 
         try:
@@ -677,6 +750,7 @@ class MusicPlayerApp(App):
         logger.debug("Playing station %d: %s", idx, station.get("name", "unknown"))
         self.stations.play(idx)
         self.currently_playing = "radio"
+        self._stream_source = True
         self.current_title = station["name"]
         self.update_now_playing(station["name"], "Radio", "▶")
 
@@ -717,10 +791,12 @@ class MusicPlayerApp(App):
             except Exception:
                 logger.warning("mpv.play failed for URL %s", source_str, exc_info=True)
             self.currently_playing = "local"
+            self._stream_source = True
+            self._current_local_source = source_str
             title = meta_label or Path(source_str).name
             self.current_title = title
             try:
-                self.update_now_playing(title, "Local File", "▶")
+                self.update_now_playing(title, "Radio", "▶")
             except Exception:
                 logger.debug("update_now_playing failed", exc_info=True)
             return
@@ -745,6 +821,8 @@ class MusicPlayerApp(App):
                 return
 
         self.currently_playing = "local"
+        self._stream_source = False
+        self._current_local_source = str(source_path or source_str)
 
         # Determine title: prefer playlist metadata, then tags via mutagen, then filename stem
         title = None
@@ -779,6 +857,28 @@ class MusicPlayerApp(App):
             logger.debug("update_now_playing failed", exc_info=True)
 
     @profile
+    def _resolve_playlist_items(self, local_list) -> list:
+        """Resolve a list widget's items robustly.
+
+        Textual's ``ListView`` has no ``items`` attribute (only ``children``), while
+        test fakes often expose ``items``. Try ``items`` first, then ``children``,
+        and never raise — always return a plain list (possibly empty).
+        """
+        for attr in ("items", "children"):
+            try:
+                candidate = getattr(local_list, attr, None)
+            except Exception:
+                logger.debug("reading %s from list widget failed", attr, exc_info=True)
+                continue
+            if not candidate:
+                continue
+            try:
+                return list(candidate)
+            except TypeError:
+                logger.debug("list widget %s is not iterable", attr, exc_info=True)
+        return []
+
+    @profile
     def action_play_playlist(self) -> None:
         """Start playback from the first item in the local playlist, if any."""
         try:
@@ -788,10 +888,7 @@ class MusicPlayerApp(App):
             self.update_now_playing("No local list", "", "⚠")
             return
 
-        # Try common list storage attributes used in tests and by Textual
-        items = getattr(local_list, "items", None) or getattr(
-            local_list, "children", None
-        )
+        items = self._resolve_playlist_items(local_list)
         if not items:
             logger.debug("No items in playlist")
             self.update_now_playing("No items in playlist", "", "⚠")
