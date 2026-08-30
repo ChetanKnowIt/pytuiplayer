@@ -1,50 +1,39 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`main` — **merged** (merge commit `bcd8224`, `--no-ff`, pushed). 102 tests pass, ruff clean, 53/53 backlog done.
+`feature/07-fix-ui-alignment` — branched off `main` (known-good baseline: 102 tests, ruff clean, 53/53 backlog done).
 
 ## Completed This Session
 
-### feature/06-fix-ui-alignment — **DONE** (merged to main)
-Fixed UI alignment by merging the separate `ProgressBar` widget into `NowPlaying`, creating a compact 2-row Winamp-style display.
+### ROADMAP.md cleanup (on `main`, pre-branch)
+- Added the missing `feature/06-fix-ui-alignment` entry to ROADMAP.md (it was merged but never recorded; AI_TASK_STATE.md + git history confirmed it).
+- Removed the dead `#progress` CSS rule (lines 105–113) for the already-deleted `ProgressBar` widget — leftover from before feature/06.
+- Noted in ROADMAP that the `#now-playing` box still clipped its 2nd row, motivating the follow-up branch.
 
-**Problem:** The progress bar and metadata were in separate rows below the NowPlaying widget, creating a disjointed layout.
+### feature/07-fix-ui-alignment — **IN PROGRESS** (branch `feature/07-fix-ui-alignment`)
+Fixes residual UI alignment defects uncovered by a headless layout probe (`NowPlaying.render()`
+always returns 2 lines, but the CSS content area was too short to show row 2).
 
-**Solution:** Merged `ProgressBar` into `NowPlaying` to create a single compact widget:
-- Row 1: position | elapsed/total | khz | kbps | state | title (with marquee)
-- Row 2: seek bar (local files) OR stream metadata (radio)
+**Evidence (headless probe, `run_test(size=(120,40))`):**
+- Before: `#now-playing` region height=5 but content height=1 → `NowPlaying.render()` 2nd row
+  (seek bar / stream metadata) was clipped/invisible.
+- After:  `#now-playing` content height=2 → both rows render (`'...Nothing playing'`, `'⏱ Duration unknown'`).
 
 **Changes:**
-- `widgets.py` — Removed `ProgressBar` class, added `stream` and `meta` reactives to `NowPlaying`
-- `screens.py` — Removed separate `ProgressBar` yield, updated layout docs
-- `tui_app.py` — Updated `action_stop()` and `update_progress()` to use `NowPlaying` instead of `ProgressBar`
-- `musicplayer_tui.css` — Reduced `#now-playing` height from 4 to 3 (compact 2-row display)
-- All tests updated to use `NowPlaying` instead of `ProgressBar`
+- `src/pytuiplayer/musicplayer_tui.css`
+  - `#now-playing`: `height: 5` → `height: 6; min-height: 6` (content = height - 4 = 2 lines). Comment explains the border+padding math.
+  - `#controls`: `height: 4` → `height: 5` (content = height - 2 (padding) = 3, fits the round-bordered buttons (3) and `#volume-indicator` (3) without clipping).
+- ROADMAP.md + AI_TASK_STATE.md updated to reflect feature/06 + this branch.
 
-**Layout Before:**
-```
-┌─────────────────────────────────────┐
-│ NowPlaying (LED display)            │  ← height 4
-├─────────────────────────────────────┤
-│ ProgressBar (seek bar)              │  ← separate row
-├─────────────────────────────────────┤
-│ Controls                            │
-└─────────────────────────────────────┘
-```
-
-**Layout After:**
-```
-┌─────────────────────────────────────┐
-│ NowPlaying (LED + seek bar)         │  ← height 3 (compact)
-├─────────────────────────────────────┤
-│ Controls                            │
-└─────────────────────────────────────┘
-```
+**Not yet committed** (user did not ask to commit).
 
 ## Tests
-- `uv run pytest -q` → **102 passed in ~10s**
-- `uv run ruff check src/` → All checks passed!
-- `report_testsuite_db.py` → collected 102 / passed 102; **53/53 backlog done**
+- `uv run pytest -q` → **102 passed in ~10s** (no regressions from CSS change)
+- `uv run ruff check .` → **All checks passed!**
+- Headless layout probe confirmed `#now-playing` now renders 2 lines (row 2 no longer clipped).
 
 ## Next Step
-Branch is merged and pushed. Ready for next feature branch off updated `main`.
+Add an acceptance/test guard that the NowPlaying widget reserves height for both rows (so a future
+CSS shrink can't silently re-clip row 2), then commit the branch and update the testsuite DB report.
+Optionally verify a visual screenshot (no cairosvg/rsvg-convert available in this env to rasterize
+the Textual SVG; the 2-line render assertion is the functional gate).

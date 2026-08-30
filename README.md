@@ -121,7 +121,7 @@ Use this quick checklist to manually verify the core behaviors of the TUI and to
 
 * Run automated tests:
   - Command: `uv run pytest -q`
-  - Expected: **76 passed** (includes 1 `network`-marked radio integration test that auto-skips offline; every run also refreshes `testsuite.db`)
+  - Expected: **102 passed** (includes 1 `network`-marked radio integration test that auto-skips offline; every run also refreshes `testsuite.db`). The live count is the source of truth — re-run `uv run pytest -q` rather than trusting a hardcoded number.
 
 * Manual UI checks (run from project root):
   1. Start the app: `uv run pytuiplayer`
