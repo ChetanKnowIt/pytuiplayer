@@ -1,13 +1,14 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`feature/04-update-medium-priority` (branched off `main` @ `c40cb9e`, known-good baseline: 76 tests, ruff clean)
+`feature/04-update-medium-priority` — **MERGED to `main`** (merge commit `d6a2711`, `--no-ff`, pushed). `main` is the known-good baseline: 81 tests, ruff clean.
 
 ## Purpose
-Close ROADMAP **Medium Priority #1** — recursive directory scanning in `load_local_files`.
-Nested music folders were not supported (only the top-level directory was scanned).
-Remaining medium items (search/filter, favorites, history, shuffle/repeat, configurable
-bindings, export, album art) are explicitly left unscheduled per the branch's scope.
+Close ROADMAP **Medium Priority #1** — recursive directory scanning in `load_local_files`,
+plus an in-branch bug fix: the Radio→Local mode switch crashed the TUI because `load_local_files`
+spawned the `fetch_duration` worker as `run_worker(self.fetch_duration, item)` (Textual consumed
+`item` as the worker *name*, so `fetch_duration()` ran with no item → `TypeError`; `exit_on_error=True`
+killed the app). Fixed with `functools.partial(self.fetch_duration, item)` + `exit_on_error=False`.
 
 ## Completed This Session
 

@@ -150,6 +150,6 @@ feature build always starts from a green, known-good state:
 8. **Next feature:** start the new work on a fresh branch off updated `main`
    (`git checkout main && git pull && git checkout -b feature/<next-slug>`).
 
-> History note: `feature/01-song-duration`, `feature/02-fix-design-flows`, and
-> `feature/03-fix-missing-features` have been merged to `main` and pushed. `main` is the
+> History note: `feature/01-song-duration`, `feature/02-fix-design-flows`, `feature/03-fix-missing-features`,
+> and `feature/04-update-medium-priority` have been merged to `main` and pushed. `main` is the
 > known-good baseline for the next feature branch.
