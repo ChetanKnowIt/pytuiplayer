@@ -6,13 +6,7 @@
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 9 | `load_local_files` only scans top-level directory — no recursive scan | `tui_app.py:532-548` | Nested music folders not supported |
-
-### Missing Features / Gaps
-
-| # | Issue | Location | Impact |
-|---|-------|----------|--------|
-| — | _None open._ #11 (local metadata), #12 (playlist item access), #13 (playlist binding) closed by `feature/03-fix-missing-features`. | — | — |
+| 9 | `load_local_files` only scans top-level directory — no recursive scan | `tui_app.py:532-548` | Nested music folders not supported (owned by feature/04) |
 
 ---
 
@@ -56,49 +50,14 @@ Open work is grouped into feature branches. Each branch is developed and tested 
 its own (`feature/NN-slug`), and may merge to `main` only when every test in its plan
 passes (`uv run pytest -q` → green) and `uv run ruff check .` is clean. The test names
 below are the **acceptance criteria** — add them to `src/tests/` (e.g.
-`test_feature_03_missing_features.py`) and mirror them into `testsuite.db` via
+`test_feature_0N_*.py`) and mirror them into `testsuite.db` via
 `scripts/update_testsuite_db.py` so the DB tracks each branch's progress.
-
-### feature/03-fix-missing-features — **DONE** (branch `feature/03-fix-missing-features`)
-Closes Missing Features / Gaps #11, #12, #13.
-Functional gaps: local-file metadata, robust playlist item access, playlist keyboard binding.
-
-**Tests required to mark Done (all pass — 10 tests in `test_feature_03_missing_features.py`):**
-- ✅ `test_local_metadata_polling_updates_title` — `_refresh_metadata` delegates to
-  `_refresh_local_metadata` in local mode, reads mutagen tags (`artist - title`) and updates
-  `current_title` / `NowPlaying`. Supporting: `test_local_metadata_polling_is_cached_per_source`,
-  `test_local_metadata_falls_back_to_media_title`, `test_radio_metadata_path_still_works`,
-  `test_play_local_records_current_source`.
-- ✅ `test_action_play_playlist_resolves_item` — resolution moved to
-  `_resolve_playlist_items()` (tries `items`, then `children`, never raises). Supporting:
-  `test_action_play_playlist_without_items_attribute`, `test_resolve_playlist_items_never_raises`,
-  `test_action_play_playlist_reports_empty_playlist`.
-- ✅ `test_playlist_keyboard_binding_plays` — `Binding("o", "play_playlist")` added to
-  `BINDINGS`; the action plays the first playlist item via mpv.
-
-**Bug fix (added in-session): M3U radio URL entries shown as "Local File", no metadata.**
-- Root cause: `play_local` routed M3U URL entries through its URL branch, which set
-  `currently_playing = "local"` and labeled the source `"Local File"`; `_refresh_metadata`
-  only polled streams when `option_mode == "radio"`, so an M3U playlist of radio URLs was
-  never metadata-polled and was mislabeled.
-- Fix: introduced a `_stream_source` flag (True for any network stream — live radio or an
-  M3U URL entry). `_refresh_metadata` now dispatches on `_stream_source`
-  (`_refresh_stream_metadata` for icy-title/`media-title`) vs `currently_playing == "local"`
-  (`_refresh_local_metadata` for mutagen tags). `play_local`'s URL branch sets
-  `_stream_source = True` and labels the entry `"Radio"`; the filesystem branch sets it
-  False. `action_stop` clears it. Progress-bar title display also keys off `_stream_source`.
-- Tests: `test_play_local_url_is_flagged_stream`, `test_play_local_url_polls_stream_metadata`,
-  `test_play_local_filesystem_is_not_stream`, `test_stop_clears_stream_flag`,
-  `test_update_progress_meta_uses_stream_source`. Pre-existing radio/progress tests updated
-  to set `_stream_source = True`. Dataset-driven coverage added using the real
-  `src/tests/assets/radio_stations_hq.m3u` (177 stations, CRLF, `:` in titles):
-  `test_load_real_radio_m3u_populates`, `test_real_radio_m3u_entries_play_as_streams`.
 
 ### feature/04-update-medium-priority
 Closes Medium Priority #1 (recursive directory scanning) and any medium items not already
-delivered by 02/03.
+delivered.
 Note: Medium #2 (local metadata), #3 (responsive bar), #4 (Screen abstraction), #5
-(playlist binding), #6 (unify `item.data`) are delivered by feature/02/03 above, so this
+(playlist binding), #6 (unify `item.data`) are delivered by feature/02/03, so this
 branch owns the remaining net-new medium features — starting with recursive scan.
 
 **Tests required to mark Done (all must pass):**
@@ -109,7 +68,7 @@ branch owns the remaining net-new medium features — starting with recursive sc
   shuffle/repeat, configurable bindings, playlist export, album art) will be appended here
   or split into their own `feature/0N-*` branches as they are scheduled.
 
-### Low Priority (unscheduled — revisit after 02–04)
+### Low Priority (unscheduled — revisit after 04)
 1. Add playlist search/filter — type to filter local list
 2. Add station favorites — bookmark frequently played stations
 3. Add playback history — track recently played items
@@ -122,7 +81,7 @@ branch owns the remaining net-new medium features — starting with recursive sc
 
 ## Notes
 
-- Run `uv run pytest -q` before and after changes — expect 74 passed (last run: 2026-08-30 on branch `feature/03-fix-missing-features`)
+- Run `uv run pytest -q` before and after changes — expect 76 passed (last run: 2026-08-30 on `main`; feature/03 merged)
 - Run `uv run ruff check .` for linting
 - All tests use `FakeMPV` injection pattern — maintain this for new tests
 - `PYTUIP_DEBUG=1` enables stack traces on `update_now_playing` calls
@@ -186,5 +145,6 @@ feature build always starts from a green, known-good state:
 8. **Next feature:** start the new work on a fresh branch off updated `main`
    (`git checkout main && git pull && git checkout -b feature/<next-slug>`).
 
-> History note: `feature/01-song-duration` and `feature/02-fix-design-flows` have been
-> merged to `main` and pushed. `main` is the known-good baseline for the next feature branch.
+> History note: `feature/01-song-duration`, `feature/02-fix-design-flows`, and
+> `feature/03-fix-missing-features` have been merged to `main` and pushed. `main` is the
+> known-good baseline for the next feature branch.

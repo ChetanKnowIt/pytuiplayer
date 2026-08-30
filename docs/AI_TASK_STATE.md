@@ -1,7 +1,7 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`feature/03-fix-missing-features` (branched off `main` @ `35b3928`, known-good baseline: 59 tests, ruff clean)
+`feature/03-fix-missing-features` — **MERGED to `main`** (commit `c40cb9e`, `--no-ff`, pushed). `main` is the known-good baseline: 76 tests, ruff clean.
 
 ## Purpose
 Close ROADMAP **Missing Features / Gaps** #11, #12, #13 — local-file metadata polling,

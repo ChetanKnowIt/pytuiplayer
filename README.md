@@ -4,13 +4,15 @@
 
 ## Features
 
-* **Terminal UI** with a modern TUI design using Textual.
-* **Radio Playback**: Play your favorite internet radio stations from a JSON list.
-* **Local Music Playback**: Browse and play MP3 files from your local directories.
-* **M3U Playlist Support**: Load and play M3U playlists with metadata.
-* **Directory Navigation**: Navigate your file system to select music files or radio station JSON files.
-* **Playback Controls**: Play, pause, stop, seek, and volume control directly from the interface.
-* **Mode Switching**: Switch between Radio and Local music modes using radio buttons.
+- **Radio Playback** — stream internet radio stations from a JSON list, with live ICY/metadata titles shown in Now Playing.
+- **Local Playback** — browse and play local MP3 files; tag-based titles (`artist - title`) with filename fallback.
+- **M3U Playlists** — load `.m3u` / `.m3u8` playlists (local files or radio-stream URLs) with `#EXTINF` metadata; radio URLs play as streams with live metadata.
+- **M3U Radio Lists** — a playlist of radio-station URLs is treated as live streams (correctly labeled "Radio" with metadata polling), not local files.
+- **Directory Navigation** — file-tree browser to pick MP3s, M3U playlists, or station JSON files.
+- **Playlist Playback** — play a playlist from the start with the `o` key (or the on-screen control).
+- **Playback Controls** — play, pause, stop, seek (±5s and 10%/50%/90%), volume up/down, mute.
+- **Mode Switching** — switch between Radio and Local modes via radio buttons.
+- **Modern TUI** — built with Textual; responsive progress bar, volume indicator, and marquee Now Playing.
 
 ## Installation
 
@@ -113,7 +115,7 @@ Use this quick checklist to manually verify the core behaviors of the TUI and to
 
 * Run automated tests:
   - Command: `uv run pytest -q`
-  - Expected: **53 passed** (last run: 2026-08-30; includes 1 `network`-marked radio integration test that auto-skips offline; every run also refreshes `testsuite.db`)
+  - Expected: **76 passed** (includes 1 `network`-marked radio integration test that auto-skips offline; every run also refreshes `testsuite.db`)
 
 * Manual UI checks (run from project root):
   1. Start the app: `uv run pytuiplayer`
