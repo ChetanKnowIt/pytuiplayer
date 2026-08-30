@@ -45,6 +45,12 @@ def _reachable_station(app: MusicPlayerApp):
 
 @pytest.mark.network
 def test_radio_starts_stream_and_updates_now_playing():
+    # Live network/streaming tests are flaky in shared CI runners (egress to a
+    # HEAD probe may succeed while the mpv stream socket is blocked). Skip them
+    # unless explicitly forced with PYTUIP_RADIO_TEST=1.
+    if os.getenv("CI") and not os.getenv("PYTUIP_RADIO_TEST"):
+        pytest.skip("live radio integration test skipped in CI (set PYTUIP_RADIO_TEST=1 to force)")
+
     async def _run():
         app = MusicPlayerApp()
         async with app.run_test() as pilot:
