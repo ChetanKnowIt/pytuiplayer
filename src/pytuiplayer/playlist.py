@@ -5,6 +5,7 @@ Handles loading local MP3 files, M3U playlists, and prev/next navigation.
 
 import asyncio
 import os
+import random
 from collections.abc import AsyncIterator
 from functools import partial
 from pathlib import Path
@@ -253,10 +254,17 @@ class PlaylistLoader:
 
 
 class PlaylistNavigator:
-    """Handles prev/next navigation in local and radio lists."""
+    """Handles prev/next navigation in local and radio lists.
+
+    Honors the app's shuffle / repeat state:
+      - ``shuffle``  -> next/prev pick a random different item
+      - ``repeat``   -> "one" replays current; "all" wraps at the ends;
+                        "off" stops at the first/last item.
+    """
 
     def __init__(self, app):
         self.app = app
+        self._randrange = random.randrange
 
     @profile_async
     async def play_previous(self):
@@ -274,42 +282,80 @@ class PlaylistNavigator:
         elif self.app.option_mode == "radio":
             await self._play_adjacent_radio(1)
 
+    def _next_index(self, current: int | None, count: int, direction: int) -> int | None:
+        """Compute the index to play given shuffle/repeat state.
+
+        Returns ``None`` when navigation should be a no-op (e.g. "off" repeat
+        at the first/last item). ``direction`` is +1 for next, -1 for previous.
+        """
+        if count <= 0:
+            return None
+        if current is None:
+            current = 0
+
+        repeat = getattr(self.app, "repeat", "off")
+        if repeat == "one":
+            # Replay the current item regardless of direction.
+            return current
+
+        if getattr(self.app, "shuffle", False):
+            if count == 1:
+                return 0
+            pick = current
+            # Pick a different item at random (no infinite loop: count > 1).
+            while pick == current:
+                pick = self._randrange(count)
+            return pick
+
+        # Sequential (shuffle off).
+        new = current + direction
+        if new < 0:
+            if repeat == "all":
+                return count - 1
+            return None  # stop at start
+        if new >= count:
+            if repeat == "all":
+                return 0
+            return None  # stop at end
+        return new
+
     @profile_async
     async def _play_adjacent_local(self, direction: int):
-        """Navigate to adjacent track in local list."""
+        """Navigate to adjacent track in local list (honoring shuffle/repeat)."""
         try:
             local_list = self.app.query_one("#local-list", ListView)
-            if local_list.index is None:
-                new_index = 0
-            else:
-                new_index = local_list.index + direction
-
             items = self.app._resolve_playlist_items(local_list)
-            if items and 0 <= new_index < len(items):
-                item = items[new_index]
-                data = getattr(item, "data", None)
-                if isinstance(data, dict):
-                    self.app.play_local(data)
-                    local_list.index = new_index
+            count = len(items)
+            if count == 0:
+                return
+
+            new_index = self._next_index(local_list.index, count, direction)
+            if new_index is None:
+                return
+
+            item = items[new_index]
+            data = getattr(item, "data", None)
+            if isinstance(data, dict):
+                self.app.play_local(data)
+                local_list.index = new_index
         except Exception:
             logger.debug("play adjacent local failed", exc_info=True)
 
     @profile_async
     async def _play_adjacent_radio(self, direction: int):
-        """Navigate to adjacent station in radio list."""
+        """Navigate to adjacent station in radio list (honoring shuffle/repeat)."""
         try:
             station_list = self.app.query_one("#station-list", ListView)
             if not self.app.stations or not self.app.stations.stations:
                 return
 
-            if station_list.index is None:
-                new_index = 0
-            else:
-                new_index = station_list.index + direction
+            count = len(self.app.stations.stations)
+            new_index = self._next_index(station_list.index, count, direction)
+            if new_index is None:
+                return
 
-            if 0 <= new_index < len(self.app.stations.stations):
-                station = self.app.stations.stations[new_index]
-                await self.app.play_station(station, new_index)
-                station_list.index = new_index
+            station = self.app.stations.stations[new_index]
+            await self.app.play_station(station, new_index)
+            station_list.index = new_index
         except Exception:
             logger.debug("play adjacent radio failed", exc_info=True)

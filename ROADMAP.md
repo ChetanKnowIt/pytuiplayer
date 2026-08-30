@@ -134,9 +134,29 @@ integration: interleaved radio/local ordering, dedup, cap, replay, `H` binding).
 
 **Status:** 117 tests pass (102 + 15), ruff clean, 68/68 backlog done.
 
+### feature/09-shuffle-repeat — **DONE** (branch `feature/09-shuffle-repeat`)
+Closes Low Priority #4 (shuffle/repeat modes). Adds app-level `shuffle` (bool) and
+`repeat` ("off"|"one"|"all") state; `PlaylistNavigator` honors them in `play_next`/
+`play_previous` via a new `_next_index()` helper (deterministic, testable).
+
+**Changes:**
+- `playlist.py` — `PlaylistNavigator._next_index(current, count, direction)`:
+  - `repeat="one"` → replays current; `repeat="all"` → wraps at both ends;
+    `"off"` → stops at first/last.
+  - `shuffle=True` → picks a different random item (`random.randrange`, injectable
+    via `self._randrange` for deterministic tests). Sequential otherwise.
+  - `_play_adjacent_local` / `_play_adjacent_radio` now delegate to `_next_index`
+    and no-op when it returns `None`.
+- `tui_app.py` — `self.shuffle` / `self.repeat` in `__init__`; new bindings
+  `z` → `action_toggle_shuffle`, `r` → `action_cycle_repeat`; actions update the
+  `NowPlaying.shuffle` / `NowPlaying.repeat` reactives + post a status message.
+- `widgets.py` — `NowPlaying` gains `shuffle` + `repeat` reactives.
+- Tests: 20 tests in `test_feature_09_shuffle_repeat.py`.
+
+**Status:** 137 tests pass (117 + 20), ruff clean, 88/88 backlog done.
+
 ### Low Priority (remaining — unscheduled)
 2. Add station favorites — bookmark frequently played stations
-4. Add shuffle/repeat modes — standard player features
 5. Add configurable keybindings — user-defined bindings
 6. Add playlist export — save current list as M3U
 7. Add album art / visualizer — ASCII art from audio
