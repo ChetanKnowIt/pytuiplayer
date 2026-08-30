@@ -37,25 +37,34 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 
 ### Textual App
 
-`MusicPlayerApp(App)` in `tui_app.py` is a thin orchestrator. Widgets live in `widgets.py`, screens in `screens.py`, constants in `constants.py`, helpers in `utils.py`, and types in `types.py`.
+`MusicPlayerApp(App)` in `tui_app.py` is a thin orchestrator. Business logic lives here, but widgets, screens, constants, helpers, and types are imported from their own modules:
+
+- `widgets.py` — `NowPlaying`, `NowPlayingMessage`, `ProgressBar`, `VolumeIndicator`
+- `screens.py` — `ModeScreen` (base), `RadioScreen`, `LocalScreen`
+- `constants.py` — `MAX_PLAYLIST_ITEMS`, `DEFAULT_PLAYLIST_BATCH_SIZE`, `ICON_OK`, `ICON_ERR`
+- `utils.py` — `parse_extinf`, `resolve_source`, `fmt_mmss` (pure functions)
+- `types.py` — `ItemData` TypedDict
+
+`MusicPlayerApp.compose()` yields only `Header` + `Footer`; the active screen composes everything else. `MusicPlayerApp.query_one()` is overridden to delegate to the active screen so widgets inside pushed screens are found.
 
 ### Screen Abstraction
 
-Mode switching uses Textual's screen stack (`RadioScreen` / `LocalScreen` in `screens.py`), not manual visibility toggling. `MusicPlayerApp.query_one` delegates to the active screen so widgets inside pushed screens are found.
+Mode switching uses Textual's screen stack (`RadioScreen` / `LocalScreen`), not manual visibility toggling. `RadioScreen` and `LocalScreen` extend `ModeScreen`, which composes shared widgets (Header, Footer, NowPlaying, ProgressBar, controls, RadioSet) and calls `compose_mode_content()` for mode-specific content.
 
 ```
 MusicPlayerApp
-  └─ push_screen(RadioScreen)   # radio mode
-  └─ push_screen(LocalScreen)   # local mode
+  └─ push_screen(RadioScreen)   # radio mode → station list
+  └─ push_screen(LocalScreen)   # local mode → directory tree + local list
 ```
 
-Each screen composes shared widgets (Header, Footer, NowPlaying, ProgressBar, controls) plus mode-specific content.
+`ModeScreen` uses a `_radio_value` property (overridden by subclasses) to set which RadioButton is selected. `on_mount` syncs shared widget state from the app and defers data loading via `set_timer(0.1, ...)` so widgets are ready before population.
 
 ### Widgets (in widgets.py)
 
 | Widget | Type | Purpose |
 |--------|------|---------|
 | `NowPlaying(Static)` | Reactive | Title, source, countdown, marquee scrolling |
+| `NowPlayingMessage(Message)` | Message | Single update path from `update_now_playing()` to `NowPlaying` |
 | `ProgressBar(Static)` | Reactive | Progress bar (responsive width), elapsed/total, radio metadata |
 | `VolumeIndicator(Static)` | Reactive | Volume/mute display |
 
@@ -63,11 +72,14 @@ Each screen composes shared widgets (Header, Footer, NowPlaying, ProgressBar, co
 
 - **Reactive widget state**: Textual `reactive` descriptor on widget attributes (`title`, `state`, `progress`, `duration`, `volume`, `muted`, `_offset`)
 - **App-level state**: Plain attributes on `MusicPlayerApp` (`volume`, `muted`, `current_title`, `option_mode`, `currently_playing`, `_prev_volume`)
+- **Unified item.data**: `ItemData(source, title, duration, meta)` TypedDict — `load_local_files` and `load_m3u` both emit this shape. Radio stations still use the raw `{"name":..., "url":...}` dict.
 - **Message pattern**: `NowPlayingMessage(Message)` posted from `update_now_playing()` to `NowPlaying` widget; handler `on_now_playing_message` updates widget fields (single path — no direct-assignment fallback)
 
 ### Event Flow
 
 - `on_mount()`: Initializes volume, sets up polling intervals, pushes `RadioScreen`
+- `RadioScreen.on_mount`: Syncs shared widget state, loads stations via `set_timer(0.1, ...)` (reloads if `app.stations` is None OR list is empty, handling switch-back)
+- `LocalScreen.on_mount`: Syncs shared widget state, loads local files via `set_timer(0.1, ...)`
 - `on_radio_set_changed()`: Mode switching via `switch_screen(RadioScreen)` / `switch_screen(LocalScreen)`
 - `on_button_pressed()`: Play/Pause/Stop button handlers
 - `on_list_view_selected()`: Station/local list selection
@@ -103,8 +115,8 @@ Single file: `musicplayer_tui.css`. Dark theme (`#0b0b0b` background, `#f0e6c8` 
 
 No runtime database — the app is file-based:
 - Radio: JSON station files (`stations.json`), loaded via `anyio.open_file` async I/O
-- Local: `load_local_files()` iterates directory for `.mp3`, creates `ListItem` with `item.data = {"source": Path, "title": str, "duration": None}`
-- M3U: `load_m3u()` parses `#EXTINF` metadata, resolves relative paths, batched mounting (200/batch, max 2000 via `MAX_PLAYLIST_ITEMS`)
+- Local: `load_local_files()` iterates directory for `.mp3`, creates `ListItem` with `ItemData(source=Path, title=str, duration=None)`
+- M3U: `load_m3u()` parses `#EXTINF` metadata, resolves relative paths, batched mounting (200/batch, max 2000 via `MAX_PLAYLIST_ITEMS`), emits `ItemData(source, title, duration, meta)`
 
 Note: the test suite maintains a *generated* SQLite inventory at the repo root
 (`testsuite.db`) for tracking tests/backlog/runs. It is gitignored and refreshed on
@@ -131,6 +143,35 @@ every `uv run pytest` run (see `src/tests/testsuite_db.py`). It is not app data.
 - Every pytest run also refreshes the SQLite inventory `testsuite.db`; view it with
   `uv run python scripts/report_testsuite_db.py` (rebuild/enrich via
   `scripts/update_testsuite_db.py`). The `network`-marked radio test auto-skips offline.
+
+### Testsuite DB (testsuite.db)
+
+The full test inventory — including the test backlog (missing/integration tests) and their
+done/pending status — lives **exclusively** in a structured SQLite database
+(`testsuite.db` at the repo root). ROADMAP.md stays light; the DB is the single source of
+truth for everything test-related.
+
+- **Schema:** `files`, `tests`, `runs`, `backlog`, `meta` (see `src/tests/testsuite_db.py`).
+  Upsert keyed on `(file, name)` — reruns are idempotent.
+- **Auto-refresh:** every `uv run pytest` run writes the `tests` + `runs` tables via
+  the hook in `src/tests/conftest.py`. Only the `call` phase is counted (not setup/teardown)
+  to avoid triple-counting.
+- **Enrichment:** `scripts/update_testsuite_db.py` refreshes `files` (line counts +
+  descriptions) and mirrors the Test Backlog into `backlog` (status preserved).
+- **Reporting:** `scripts/report_testsuite_db.py` prints the inventory / backlog / runs.
+
+```bash
+uv run pytest -q                       # runs tests AND refreshes testsuite.db
+uv run python scripts/update_testsuite_db.py   # enrich files + sync backlog
+uv run python scripts/report_testsuite_db.py    # print the inventory
+```
+
+```sql
+-- Quick queries against testsuite.db
+SELECT file, COUNT(*) AS n FROM tests GROUP BY file ORDER BY file;
+SELECT status, COUNT(*) FROM backlog GROUP BY status;          -- done vs pending
+SELECT * FROM runs ORDER BY id DESC LIMIT 5;                   -- last runs
+```
 
 ## Linting/Formatting
 
@@ -180,10 +221,10 @@ Profiled methods include:
 
 1. **`fetch_duration` is an `async def` class method** spawned via `self.run_worker(self.fetch_duration, item)` from `load_local_files`. Keep its worker-trigger flag named `self.fetch_duration_eager` — never name a spawned worker the same as a bool flag.
 2. `max_playlist_items` is assigned exactly once in `__init__`, from the `MAX_PLAYLIST_ITEMS` class constant (2000). Do not re-assign it elsewhere.
-3. **Silent exception swallowing**: Most methods have bare `try/except: pass` — intentional to keep TUI alive, but makes debugging hard.
+3. **Structured error handling**: Methods use `logger.debug`/`logger.warning`/`logger.exception` instead of bare `except: pass`. The TUI stays alive but errors are visible in logs.
 4. **Screen abstraction**: Mode switching uses `RadioScreen`/`LocalScreen` via `switch_screen()`, not manual visibility toggling. `app.query_one` delegates to the active screen.
 5. **`update_now_playing` single path**: Posts a message only — no direct-assignment fallback.
-6. **`item.data` shape**: Unified `ItemData(source, title, duration, meta)` TypedDict. All producers (load_local_files, load_m3u) emit the same keys.
+6. **`item.data` shape**: Unified `ItemData(source, title, duration, meta)` TypedDict. `load_local_files` and `load_m3u` both emit this shape. Radio stations use the raw `{"name":..., "url":...}` dict (not ItemData).
 7. **`_meta_label` attribute**: Set on items by `load_m3u` but NOT by `load_local_files` — tests must account for this difference.
 8. **Station loading on RadioScreen**: `RadioScreen.on_mount` reloads stations if `app.stations` is None OR if `station_list.children` is empty (handles switch-back from LocalScreen).
 
