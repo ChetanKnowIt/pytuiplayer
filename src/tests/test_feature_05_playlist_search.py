@@ -6,7 +6,7 @@ Tests cover:
 - No matches shows empty list
 - Special regex chars in search don't break filtering
 - Winamp-style NowPlaying widget renders LED display
-- Winamp-style ProgressBar renders seek bar with position marker
+- Winamp-style NowPlaying renders seek bar with position marker
 - Winamp-style VolumeIndicator renders volume bar
 - Escape key clears search and restores full list
 - / key binding focuses search input
@@ -21,7 +21,7 @@ from textual.widgets import Input, Label, ListItem, ListView, Static
 from pytuiplayer.screens import LocalScreen
 from pytuiplayer.tui_app import MusicPlayerApp
 from pytuiplayer.types import ItemData
-from pytuiplayer.widgets import NowPlaying, ProgressBar, VolumeIndicator
+from pytuiplayer.widgets import NowPlaying, VolumeIndicator
 
 # ===========================================================================
 # Playlist Search / Filter Tests
@@ -228,9 +228,9 @@ def test_now_playing_winamp_no_position():
     assert "Nothing playing" in rendered
 
 
-def test_progress_bar_winamp_seek_bar():
-    """#9 — ProgressBar renders Winamp-style seek bar with position marker."""
-    pb = ProgressBar()
+def test_now_playing_seek_bar():
+    """#9 — NowPlaying renders Winamp-style seek bar with position marker."""
+    pb = NowPlaying()
     pb.progress = 75.0
     pb.duration = 300.0
     pb.stream = False  # local file mode
@@ -242,9 +242,9 @@ def test_progress_bar_winamp_seek_bar():
     assert "─" in rendered
 
 
-def test_progress_bar_stream_shows_metadata():
-    """#10 — ProgressBar shows metadata title for radio streams, not seek bar."""
-    pb = ProgressBar()
+def test_now_playing_stream_shows_metadata():
+    """#10 — NowPlaying shows metadata title for radio streams, not seek bar."""
+    pb = NowPlaying()
     pb.stream = True
     pb.meta = "Artist - Song Title"
     pb.progress = 30.0
@@ -257,9 +257,9 @@ def test_progress_bar_stream_shows_metadata():
     assert "─" not in rendered
 
 
-def test_progress_bar_stream_no_metadata():
-    """#11 — ProgressBar shows 'Streaming' when stream has no metadata yet."""
-    pb = ProgressBar()
+def test_now_playing_stream_no_metadata():
+    """#11 — NowPlaying shows 'Streaming' when stream has no metadata yet."""
+    pb = NowPlaying()
     pb.stream = True
     pb.meta = ""
 
@@ -267,9 +267,9 @@ def test_progress_bar_stream_no_metadata():
     assert "Streaming" in rendered
 
 
-def test_progress_bar_winamp_unknown_duration():
-    """#10 — ProgressBar shows metadata when duration is unknown."""
-    pb = ProgressBar()
+def test_now_playing_unknown_duration():
+    """#10 — NowPlaying shows metadata when duration is unknown."""
+    pb = NowPlaying()
     pb.duration = 0
     pb.meta = "Radio Stream Title"
 

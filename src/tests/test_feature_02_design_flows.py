@@ -14,7 +14,7 @@ from pytuiplayer.constants import ICON_ERR, ICON_OK, MAX_PLAYLIST_ITEMS
 from pytuiplayer.screens import LocalScreen, RadioScreen
 from pytuiplayer.types import ItemData
 from pytuiplayer.utils import fmt_mmss, parse_extinf, resolve_source
-from pytuiplayer.widgets import NowPlaying, ProgressBar, VolumeIndicator
+from pytuiplayer.widgets import NowPlaying, VolumeIndicator
 
 
 # ---------------------------------------------------------------------------
@@ -255,14 +255,14 @@ def test_no_silent_exceptions(caplog):
 
 
 # ---------------------------------------------------------------------------
-# Acceptance test 5: ProgressBar responsive width
+# Acceptance test 5: NowPlaying responsive width
 # ---------------------------------------------------------------------------
 def test_progressbar_uses_widget_width():
     """Bar length derives from self.size.width (minus padding),
     not a hardcoded 160."""
     from unittest.mock import patch
 
-    bar = ProgressBar()
+    bar = NowPlaying()
     bar.progress = 50
     bar.duration = 100
 
@@ -319,7 +319,7 @@ def test_code_split_regression():
 
     # Verify widget classes are importable and have expected attributes
     assert hasattr(NowPlaying, "on_now_playing_message")
-    assert hasattr(ProgressBar, "render")
+    assert hasattr(NowPlaying, "render")
     assert hasattr(VolumeIndicator, "render")
 
     # Verify screens are importable and have expected attributes

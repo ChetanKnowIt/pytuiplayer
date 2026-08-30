@@ -66,10 +66,11 @@ MusicPlayerApp
 
 | Widget | Type | Purpose |
 |--------|------|---------|
-| `NowPlaying(Static)` | Reactive | Title, source, countdown, marquee scrolling |
+| `NowPlaying(Static)` | Reactive | Combined LED display + seek bar (2-row compact widget) |
 | `NowPlayingMessage(Message)` | Message | Single update path from `update_now_playing()` to `NowPlaying` |
-| `ProgressBar(Static)` | Reactive | Progress bar (responsive width), elapsed/total, radio metadata |
 | `VolumeIndicator(Static)` | Reactive | Volume/mute display |
+
+The old `ProgressBar` widget was merged into `NowPlaying` to eliminate a separate row and create a more compact Winamp-style layout.
 
 ### Controller Architecture
 
@@ -99,13 +100,14 @@ This keeps `tui_app.py` focused on app lifecycle, event routing, and UI update p
 
 - `on_mount()`: Initializes volume, sets up polling intervals, pushes `RadioScreen`
 - `RadioScreen.on_mount`: Syncs shared widget state, loads stations via `set_timer(0.1, ...)` (reloads if `app.stations` is None OR list is empty, handling switch-back)
-- `LocalScreen.on_mount`: Syncs shared widget state, loads local files via `set_timer(0.1, ...)`
-- `on_radio_set_changed()`: Mode switching via `switch_screen(RadioScreen)` / `switch_screen(LocalScreen)`
-- `on_button_pressed()`: Play/Pause/Stop button handlers
+- `LocalScreen.on_mount`: Syncs shared widget state, loads local files via `set_timer(0.1, ...)`. Timer is stored in `self._pending_local_load` so it can be cancelled when an M3U is loaded.
+- `on_radio_set_changed()`: Mode switching via `switch_screen(RadioScreen)` / `switch_screen(LocalScreen)`. Clears `_stream_source`, `currently_playing`, and `current_title` to prevent stale metadata.
+- `on_button_pressed()`: Play/Pause/Stop/Prev/Next button handlers
 - `on_list_view_selected()`: Station/local list selection
-- `on_directory_tree_file_selected()`: File browser selection (JSON/M3U/MP3)
-- Polling: `update_progress()` (0.5s), `_refresh_metadata()` (1.0s)
-- Marquee: `NowPlaying._tick()` (0.6s interval)
+- `on_directory_tree_file_selected()`: File browser selection (JSON/M3U/MP3). For M3U files, cancels the pending local-file scan before loading.
+- Polling: `update_progress()` (0.5s), `metadata_poller.refresh()` (1.0s)
+- Marquee: `NowPlaying._tick()` (0.5s interval)
+- Search: `LocalScreen._filter_local_list()` rebuilds ListView items from stored data. Uses `remove_children()` + `asyncio.sleep(0)` yields to avoid Textual timing bugs.
 
 ### CSS
 
