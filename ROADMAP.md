@@ -6,13 +6,13 @@
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 4 | No Screen abstraction — mode switching via manual visibility/disabled toggling | `tui_app.py:348-390,463-518` | Brittle, repetitive, error-prone |
-| 5 | `update_now_playing` dual path (post_message + direct assignment fallback) | `tui_app.py:900-926` | Confusing control flow; hard to debug |
-| 6 | `item.data` shape varies: dict (M3U), dict (local), raw station dict (radio) | Throughout | Requires `isinstance` checks everywhere |
+| 4 | ✅ No Screen abstraction — mode switching via manual visibility/disabled toggling | `tui_app.py:348-390,463-518` | RESOLVED: `RadioScreen`/`LocalScreen` in `screens.py` |
+| 5 | ✅ `update_now_playing` dual path (post_message + direct assignment fallback) | `tui_app.py:900-926` | RESOLVED: single message-posting path |
+| 6 | ✅ `item.data` shape varies: dict (M3U), dict (local), raw station dict (radio) | Throughout | RESOLVED: unified `ItemData` TypedDict in `types.py` |
 | 7 | Imports inside method bodies (`asyncio`, `Path`, `DirectoryTree`) | `tui_app.py` (was 745-748) | Resolved — hoisted to module top |
-| 8 | Silent exception swallowing (`try/except: pass`) in most methods | Throughout | Makes debugging extremely difficult |
+| 8 | ✅ Silent exception swallowing (`try/except: pass`) in most methods | Throughout | RESOLDED: `logger.warning`/`logger.exception` |
 | 9 | `load_local_files` only scans top-level directory — no recursive scan | `tui_app.py:532-548` | Nested music folders not supported |
-| 10 | ProgressBar bar width hardcoded to 160 chars | `tui_app.py:242` | Not responsive to terminal width |
+| 10 | ✅ ProgressBar bar width hardcoded to 160 chars | `tui_app.py:242` | RESOLVED: responsive width from `self.size.width` |
 
 ### Missing Features / Gaps
 
@@ -68,28 +68,43 @@ below are the **acceptance criteria** — add them to `src/tests/` (e.g.
 `test_feature_02_design_flows.py`) and mirror them into `testsuite.db` via
 `scripts/update_testsuite_db.py` so the DB tracks each branch's progress.
 
-### feature/02-fix-design-flows
+### feature/02-fix-design-flows ✅ DONE
 Closes Design Flaws #4, #5, #6, #8, #10 and Refactoring Candidates #1–#5.
 Structural debt: Screen abstraction, single now-playing update path, unified `item.data`
 shape, structured error handling, responsive progress bar, and a code split (widgets /
 handlers / loaders → modules; `utils.py`; `constants.py`; TypedDict for `item.data`).
 
 **Tests required to mark Done (all must pass):**
-- `test_radio_local_use_screens_not_visibility_toggle` — mode switch mounts
+- ✅ `test_radio_local_use_screens_not_visibility_toggle` — mode switch mounts
   `RadioScreen`/`LocalScreen` and hides the other; no manual `display`/`disabled`
   toggling remains in `on_radio_set_changed`.
-- `test_update_now_playing_single_path` — `update_now_playing` updates the widget only
+- ✅ `test_update_now_playing_single_path` — `update_now_playing` updates the widget only
   via `NowPlayingMessage`; the direct-assignment fallback is removed and
   `on_now_playing_message` is the single handler.
-- `test_item_data_unified_typeddict` — `load_local_files`, `load_m3u`, and radio
+- ✅ `test_item_data_unified_typeddict` — `load_local_files`, `load_m3u`, and radio
   selection all emit `ItemData(source, title, duration, meta)`; consumers no longer
   need `isinstance` guards on shape.
-- `test_no_silent_exceptions` — bare `except: pass` replaced with
+- ✅ `test_no_silent_exceptions` — bare `except: pass` replaced with
   `logger.warning`/`logger.exception`; assert expected errors are logged, not swallowed.
-- `test_progressbar_uses_widget_width` — bar length derives from `self.size.width`
+- ✅ `test_progressbar_uses_widget_width` — bar length derives from `self.size.width`
   (minus padding), not a hardcoded 160.
-- `test_code_split_regression` — after extracting modules, all prior tests still pass
+- ✅ `test_code_split_regression` — after extracting modules, all prior tests still pass
   (behavior unchanged).
+
+**Files added:**
+- `src/pytuiplayer/constants.py` — `MAX_PLAYLIST_ITEMS`, `DEFAULT_PLAYLIST_BATCH_SIZE`, `ICON_OK`, `ICON_ERR`
+- `src/pytuiplayer/utils.py` — `parse_extinf`, `resolve_source`, `fmt_mmss`
+- `src/pytuiplayer/types.py` — `ItemData` TypedDict
+- `src/pytuiplayer/widgets.py` — `NowPlaying`, `NowPlayingMessage`, `ProgressBar`, `VolumeIndicator`
+- `src/pytuiplayer/screens.py` — `ModeScreen`, `RadioScreen`, `LocalScreen`
+- `src/tests/test_feature_02_design_flows.py` — 6 acceptance tests
+
+**Files modified:**
+- `src/pytuiplayer/tui_app.py` — 1270 → 809 lines (extracted to modules)
+- `src/tests/test_backlog_coverage.py` — updated `test_mode_switch_updates_visibility` for screen abstraction
+- `src/tests/test_tui_app.py` — updated `test_visibility_toggle_hides_unused_widgets` for screen abstraction
+
+**Test count:** 53 → 59 (all pass)
 
 ### feature/03-fix-missing-features
 Closes Missing Features / Gaps #11, #12, #13.
@@ -133,17 +148,17 @@ branch owns the remaining net-new medium features — starting with recursive sc
 
 ## Refactoring Candidates
 
-1. Split `tui_app.py` — Extract widgets, event handlers, and loaders into separate modules
-2. Create `utils.py` — Move `_parse_extinf`, `_resolve_source`, `fmt_mmss` helpers
-3. Create `constants.py` — Move `MAX_PLAYLIST_ITEMS`, `ICON_OK`, `ICON_ERR`
-4. Standardize error handling — Replace bare `except: pass` with structured logging
-5. Add type hints — `item.data` needs TypedDict or dataclass
+1. ✅ Split `tui_app.py` — Extract widgets, event handlers, and loaders into separate modules
+2. ✅ Create `utils.py` — Move `parse_extinf`, `resolve_source`, `fmt_mmss` helpers
+3. ✅ Create `constants.py` — Move `MAX_PLAYLIST_ITEMS`, `ICON_OK`, `ICON_ERR`
+4. ✅ Standardize error handling — Replace bare `except: pass` with structured logging
+5. ✅ Add type hints — `item.data` needs TypedDict or dataclass
 
 ---
 
 ## Notes
 
-- Run `uv run pytest -q` before and after changes — expect 53 passed (last run: 2026-08-30 on branch `testsuite/01-update-test-backlog`)
+- Run `uv run pytest -q` before and after changes — expect 59 passed (last run: 2026-08-30 on branch `feature/02-fix-design-flows`)
 - Run `uv run ruff check .` for linting
 - All tests use `FakeMPV` injection pattern — maintain this for new tests
 - `PYTUIP_DEBUG=1` enables stack traces on `update_now_playing` calls
