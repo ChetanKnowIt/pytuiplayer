@@ -155,10 +155,25 @@ Closes Low Priority #4 (shuffle/repeat modes). Adds app-level `shuffle` (bool) a
 
 **Status:** 137 tests pass (117 + 20), ruff clean, 88/88 backlog done.
 
+### feature/10-playlist-export — **DONE** (branch `feature/10-playlist-export`)
+Closes Low Priority #6 (playlist export to M3U). Adds a `PlaylistExporter` controller that
+serializes the current local playlist (`app.local_items`, an `ItemData` dict) to a standard
+EXTINF M3U file. Pure file I/O, fully unit-testable.
+
+**Changes:**
+- `src/pytuiplayer/exporter.py` (new) — `PlaylistExporter` with `build_lines(items)` (emits
+  `#EXTM3U` + per-item `#EXTINF:<int seconds or -1>,<title>` + `<source>`), `export_m3u(path, items)`,
+  and `default_export_path()` (`~/Music/pytuiplayer/playlist.m3u`). `@profile` on each method.
+- `tui_app.py` — `self.playlist_exporter = PlaylistExporter(self)` in `__init__`; binding
+  `e` → `action_export_playlist()` (exports to the default path, or warns when empty);
+  `export_playlist_to(path)` thin accessor for tests/UI.
+- Tests: 10 tests in `test_feature_10_playlist_export.py`.
+
+**Status:** 147 tests pass (137 + 10), ruff clean, 98/98 backlog done.
+
 ### Low Priority (remaining — unscheduled)
 2. Add station favorites — bookmark frequently played stations
 5. Add configurable keybindings — user-defined bindings
-6. Add playlist export — save current list as M3U
 7. Add album art / visualizer — ASCII art from audio
 
 ---

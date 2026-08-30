@@ -28,6 +28,7 @@ from pytuiplayer.constants import (
     ICON_ERR,
     MAX_PLAYLIST_ITEMS,
 )
+from pytuiplayer.exporter import PlaylistExporter
 from pytuiplayer.history import HistoryTracker
 from pytuiplayer.logging_config import get_logger, setup_logging
 from pytuiplayer.metadata import MetadataPoller
@@ -64,6 +65,7 @@ class MusicPlayerApp(App):
         Binding("H", "play_history_last", description="Replay last played item"),
         Binding("z", "toggle_shuffle", description="Toggle shuffle"),
         Binding("r", "cycle_repeat", description="Cycle repeat mode"),
+        Binding("e", "export_playlist", description="Export playlist to M3U"),
         Binding("/", action="focus_search", description="Focus search input"),
     ]
 
@@ -109,6 +111,7 @@ class MusicPlayerApp(App):
         self.playlist_loader = PlaylistLoader(self)
         self.playlist_navigator = PlaylistNavigator(self)
         self.history_tracker = HistoryTracker(self)
+        self.playlist_exporter = PlaylistExporter(self)
 
     MAX_PLAYLIST_ITEMS = MAX_PLAYLIST_ITEMS
 
@@ -363,6 +366,37 @@ class MusicPlayerApp(App):
             )
         except Exception:
             logger.debug("update_now_playing failed in cycle_repeat", exc_info=True)
+
+    @profile
+    def action_export_playlist(self) -> None:
+        """Export the current local playlist to an M3U file (bound to e)."""
+        items = list(getattr(self, "local_items", {}).values())
+        if not items:
+            logger.debug("export_playlist: nothing to export")
+            try:
+                self.update_now_playing("Nothing to export", "", "⚠")
+            except Exception:
+                pass
+            return
+        try:
+            path = self.playlist_exporter.default_export_path()
+            written = self.playlist_exporter.export_m3u(path, items)
+            try:
+                self.update_now_playing(f"Exported {len(items)} tracks", "", "⏺")
+            except Exception:
+                pass
+            logger.info("Playlist exported to %s", written)
+        except Exception:
+            logger.warning("export_playlist failed", exc_info=True)
+            try:
+                self.update_now_playing("Export failed", "", "⚠")
+            except Exception:
+                pass
+
+    def export_playlist_to(self, path) -> Path:
+        """Thin accessor: export to an explicit path (used by tests/UI)."""
+        items = list(getattr(self, "local_items", {}).values())
+        return self.playlist_exporter.export_m3u(path, items)
 
     # === Mode switching ===
 
