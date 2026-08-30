@@ -5,39 +5,71 @@ The app switches between ``RadioScreen`` and ``LocalScreen`` via
 clean mode-switch abstraction. Each screen composes the shared widgets
 (Header, Footer, NowPlaying, ProgressBar, controls) plus its mode-specific
 content.
+
+Winamp-style layout:
+  ┌─────────────────────────────────────────────────────┐
+  │ Header (track info, time, bitrate)                  │
+  ├─────────────────────────────────────────────────────┤
+  │ Progress Bar (seek)                                 │
+  ├─────────────────────────────────────────────────────┤
+  │ Controls (Play/Pause/Stop/Prev/Next/Volume)         │
+  ├────────────┬────────────────────────────────────────┤
+  │ Sidebar    │ Content (station list or local list)    │
+  │ (Mode      │ + search bar for local mode             │
+  │  buttons)  │                                        │
+  └────────────┴────────────────────────────────────────┘
 """
 
 from pathlib import Path
 
+from textual import on
 from textual.containers import Horizontal, Vertical
+from textual.events import Key
 from textual.screen import Screen
 from textual.widgets import (
     Button,
     DirectoryTree,
     Footer,
     Header,
+    Input,
+    Label,
+    ListItem,
     ListView,
     RadioButton,
     RadioSet,
+    Static,
 )
 
 from pytuiplayer.widgets import NowPlaying, ProgressBar, VolumeIndicator
 
 
 class ModeScreen(Screen):
-    """Base class for mode screens — composes shared + mode-specific widgets."""
+    """Base class for mode screens — composes shared + mode-specific widgets.
+
+    Winamp-style layout:
+      - NowPlaying: full-width LED display at top
+      - ProgressBar: full-width seek bar
+      - Controls: horizontal button bar
+      - Main content: sidebar (mode selector) + content area
+    """
 
     def compose(self):
         yield Header()
         yield Footer()
+        # Now Playing display — full width, LED style
         yield NowPlaying(id="now-playing")
+        # Progress / seek bar
         yield ProgressBar(id="progress")
+        # Controls bar
         with Horizontal(id="controls"):
-            yield Button("▶ Play", id="play")
-            yield Button("⏸ Pause", id="pause")
-            yield Button("⏹ Stop", id="stop")
+            yield Button("⏮", id="prev", classes="control-btn")
+            yield Button("▶", id="play", classes="control-btn")
+            yield Button("⏸", id="pause", classes="control-btn")
+            yield Button("⏹", id="stop", classes="control-btn")
+            yield Button("⏭", id="next", classes="control-btn")
             yield VolumeIndicator(id="volume-indicator")
 
+        # Main content area
         with Horizontal(id="main-content"):
             with Vertical(id="sidebar") as sidebar:
                 yield RadioSet(
@@ -45,7 +77,7 @@ class ModeScreen(Screen):
                     RadioButton("Local", id="local-option", value=not self._radio_value),
                     id="option-set",
                 )
-                sidebar.border_title = "Mode Selection"
+                sidebar.border_title = "Mode"
 
             with Vertical(id="content"):
                 yield from self.compose_mode_content()
@@ -111,25 +143,127 @@ class RadioScreen(ModeScreen):
 
 
 class LocalScreen(ModeScreen):
-    """Local mode: directory tree + local file list with mode selector."""
+    """Local mode: directory tree + local file list + search bar with mode selector.
+
+    Winamp-style:
+      - Search input at top of content area (type to filter)
+      - DirectoryTree for browsing
+      - ListView for results
+      - Loading indicator during file scan
+    """
 
     @property
     def _radio_value(self) -> bool:
         return False
 
     def compose_mode_content(self):
+        yield Static("🔍 Search:", id="search-label")
+        yield Input(placeholder="Type to filter tracks...", id="search-input")
         yield DirectoryTree(str(Path.home()), id="directory-tree")
+        yield Static("", id="loading-status")
         yield ListView(id="local-list")
 
     def on_mount(self) -> None:
         super().on_mount()
         local_list = self.query_one("#local-list", ListView)
-        local_list.border_title = "Local Music List"
-        # Load local files after the screen is fully mounted so widgets are available.
-        self.set_timer(0.1, self._load_local)
+        local_list.border_title = "Local Music"
+        # Defer local file loading to avoid race condition with M3U loading.
+        # The timer is stored so it can be cancelled if an M3U is loaded first.
+        self._pending_local_load = self.set_timer(0.1, self._load_local)
 
     async def _load_local(self) -> None:
+        loading = self.query_one("#loading-status", Static)
+        loading.update("📂 Scanning for MP3 files...")
         try:
-            await self.app.load_local_files(Path.home())
+            await self.app.playlist_loader.load_local_files(Path.home())
+            loading.update("✅ Ready")
         except Exception:
-            pass
+            loading.update("❌ Error loading files")
+
+    def cancel_pending_local_load(self) -> None:
+        """Cancel the pending local file load (called when loading an M3U)."""
+        if hasattr(self, '_pending_local_load') and self._pending_local_load:
+            self._pending_local_load.stop()
+            self._pending_local_load = None
+
+    @on(Input.Changed, "#search-input")
+    async def on_search_changed(self, event: Input.Changed) -> None:
+        """Filter local list items based on search input (case-insensitive)."""
+        query = event.value.lower().strip()
+        local_list = self.query_one("#local-list", ListView)
+        await self._filter_local_list(local_list, query)
+
+    @on(Input.Submitted, "#search-input")
+    async def on_search_submitted(self, event: Input.Submitted) -> None:
+        """Enter key in search: blur input to restore keyboard bindings."""
+        self.query_one("#search-input", Input).blur()
+
+    async def on_key(self, event: Key) -> None:
+        """Handle Escape key to blur search input and restore keyboard bindings."""
+        if event.key == "escape":
+            search_input = self.query_one("#search-input", Input)
+            if search_input.has_focus:
+                search_input.blur()
+                # Clear search to restore full list
+                search_input.value = ""
+                local_list = self.query_one("#local-list", ListView)
+                await self._filter_local_list(local_list, "")
+                event.prevent_default()
+
+    async def _filter_local_list(self, local_list: ListView, query: str) -> None:
+        """Filter the local list to show only items matching the query.
+
+        Rebuilds fresh ListItems from stored data to avoid blank entries
+        that occur when reusing detached widgets after clear()+mount().
+        """
+        import asyncio
+
+        from pytuiplayer.utils import fmt_mmss
+
+        all_items = getattr(self.app, "local_items", {})
+        if not all_items:
+            return
+
+        # Determine which items to show
+        if not query:
+            items_to_show = list(all_items.values())
+        else:
+            items_to_show = []
+            for item_data in all_items.values():
+                if isinstance(item_data, dict):
+                    title_text = item_data.get("title", "")
+                else:
+                    title_text = getattr(item_data, "title", "")
+                if query in str(title_text).lower():
+                    items_to_show.append(item_data)
+
+        # Clear and rebuild based on filter
+        # First, create all new items
+        new_items = []
+        for item_data in items_to_show:
+            if isinstance(item_data, dict):
+                title = item_data.get("title", "")
+                duration = item_data.get("duration")
+            else:
+                title = getattr(item_data, "title", "")
+                duration = getattr(item_data, "duration", None)
+            
+            duration_str = fmt_mmss(duration) if duration is not None else ""
+            display = f"{title:<40} {duration_str}"
+            # Pass Label to constructor - this is the reliable way
+            item = ListItem(Label(display))
+            item.data = item_data
+            new_items.append(item)
+        
+        # Remove old children and await completion
+        await local_list.remove_children()
+        # Yield to let Textual complete the removal
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        
+        # Mount all new items at once
+        await local_list.mount(*new_items)
+
+

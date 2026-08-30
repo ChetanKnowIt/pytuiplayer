@@ -53,6 +53,8 @@ FILE_DESCRIPTIONS = {
         "feature/03: local metadata, playlist action+binding, M3U radio fix, real-list dataset.",
     "src/tests/test_feature_04_medium_priority.py":
         "feature/04 acceptance tests (recursive local-file scanning).",
+    "src/tests/test_feature_05_playlist_search.py":
+        "feature/05: playlist search/filter + Winamp UI overhaul.",
 }
 
 # ---------------------------------------------------------------------------
@@ -160,6 +162,50 @@ BACKLOG = [
     ("test_switch_to_local_does_not_crash_on_fetch_duration_worker", "unit",
      "Radio->Local switch does not crash fetch_duration worker", "done",
      "Medium #1"),
+    # feature/05 — Low Priority #1: playlist search/filter
+    ("test_search_filters_items_by_title_substring", "unit",
+     "Search input filters local list by title substring", "done",
+     "Low Priority #1"),
+    ("test_search_is_case_insensitive", "unit",
+     "Search is case-insensitive", "done",
+     "Low Priority #1"),
+    ("test_clearing_search_restores_full_list", "unit",
+     "Clearing search restores the full list", "done",
+     "Low Priority #1"),
+    ("test_search_no_matches_shows_empty_list", "unit",
+     "Search with no matches shows empty list", "done",
+     "Low Priority #1"),
+    ("test_search_special_chars_dont_break_filtering", "unit",
+     "Special regex chars in search don't break filtering", "done",
+     "Low Priority #1"),
+    # feature/05 — Winamp UI overhaul
+    ("test_now_playing_winamp_led_display", "unit",
+     "NowPlaying renders Winamp-style LED display", "done",
+     "Winamp UI"),
+    ("test_now_playing_winamp_no_position", "unit",
+     "NowPlaying shows '--' when no position info", "done",
+     "Winamp UI"),
+    ("test_progress_bar_winamp_seek_bar", "unit",
+     "ProgressBar renders Winamp-style seek bar", "done",
+     "Winamp UI"),
+    ("test_progress_bar_winamp_unknown_duration", "unit",
+     "ProgressBar shows metadata when duration is unknown", "done",
+     "Winamp UI"),
+    ("test_volume_indicator_winamp_bar", "unit",
+     "VolumeIndicator renders Winamp-style volume bar", "done",
+     "Winamp UI"),
+    ("test_volume_indicator_winamp_muted", "unit",
+     "VolumeIndicator shows MUTE when muted", "done",
+     "Winamp UI"),
+    ("test_local_screen_compose_mode_content_has_search_input", "unit",
+     "LocalScreen composes a search input widget", "done",
+     "Low Priority #1"),
+    ("test_local_screen_compose_mode_content_has_loading_status", "unit",
+     "LocalScreen composes a loading status widget", "done",
+     "Low Priority #1"),
+    ("test_mode_screen_class_has_prev_next_button_ids", "unit",
+     "ModeScreen defines prev/next button IDs", "done",
+     "Winamp UI"),
 ]
 
 

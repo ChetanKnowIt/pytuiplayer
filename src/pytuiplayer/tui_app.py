@@ -1,25 +1,14 @@
 """Main Textual app for pytuiplayer.
 
-Thin orchestrator: business logic lives here, but widgets, screens,
-constants, and helpers are imported from their own modules.
+Thin orchestrator: routes events to focused modules (volume, metadata, playlist, station_player).
 """
 
 import asyncio
-import json
 import os
 import traceback
-from collections.abc import AsyncIterator
-from functools import partial
 from pathlib import Path
-from typing import Any
 
-# Optional – install with `pip install aiofiles`
-try:
-    import aiofiles
-except Exception:  # pragma: no cover
-    aiofiles = None  # fallback to sync reading (still faster than the original)
-
-from anyio import open_file  # <- a coroutine
+from anyio import open_file
 from mutagen import File as MutagenFile
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -28,6 +17,7 @@ from textual.widgets import (
     DirectoryTree,
     Footer,
     Header,
+    Input,
     Label,
     ListItem,
     ListView,
@@ -39,23 +29,20 @@ from pytuiplayer.constants import (
     MAX_PLAYLIST_ITEMS,
 )
 from pytuiplayer.logging_config import get_logger, setup_logging
+from pytuiplayer.metadata import MetadataPoller
 from pytuiplayer.mpv_player import MPVPlayer
+from pytuiplayer.playlist import PlaylistLoader, PlaylistNavigator
 from pytuiplayer.profiling import profile, profile_async
 from pytuiplayer.screens import LocalScreen, RadioScreen
 from pytuiplayer.station_player import StationPlayer
-from pytuiplayer.types import ItemData
-from pytuiplayer.utils import fmt_mmss, parse_extinf, resolve_source
-from pytuiplayer.widgets import NowPlaying, NowPlayingMessage, ProgressBar, VolumeIndicator
+from pytuiplayer.volume import VolumeController
+from pytuiplayer.widgets import NowPlaying, NowPlayingMessage, ProgressBar
 
 logger = get_logger("tui_app")
 
 
 class MusicPlayerApp(App):
-    """Terminal music player with radio and local playback modes.
-
-    Mode switching uses Textual's screen stack (``RadioScreen`` /
-    ``LocalScreen``) instead of manual visibility toggling.
-    """
+    """Terminal music player with radio and local playback modes."""
 
     CSS_PATH = "musicplayer_tui.css"
     BINDINGS = [
@@ -73,6 +60,7 @@ class MusicPlayerApp(App):
         Binding("-", "volume_down", description="Volume -"),
         Binding("m", "toggle_mute", description="Mute toggle"),
         Binding("o", "play_playlist", description="Play playlist from start"),
+        Binding("/", action="focus_search", description="Focus search input"),
     ]
 
     def query_one(self, selector, *args, **kwargs):
@@ -87,8 +75,8 @@ class MusicPlayerApp(App):
         self.mpv = MPVPlayer()
         self.stations = None
         self.currently_playing = None
-        self._stream_source = False  # True when a network stream (radio/M3U URL) is playing
-        self.option_mode = "radio"  # default
+        self._stream_source = False
+        self.option_mode = "radio"
         self.stations_file = Path(__file__).parent / "stations.json"
         self.current_title = "Nothing playing"
 
@@ -97,20 +85,25 @@ class MusicPlayerApp(App):
         self.muted = False
         self._prev_volume = self.volume
 
-        # Playlist loading controls (can be overridden in tests or by callers)
+        # Playlist loading controls
         self.max_playlist_items = MAX_PLAYLIST_ITEMS
         self.playlist_batch_size = DEFAULT_PLAYLIST_BATCH_SIZE
-        self.fetch_duration_eager = False  # set True for eager duration fetch at load
+        self.fetch_duration_eager = False
+        self.local_items = {}
 
-        # Local-file metadata polling state (see _refresh_local_metadata)
+        # Local-file metadata polling state
         self._current_local_source = None
         self._local_meta_source = None
 
-    # Maximum number of playlist items to load by default (safety for very large M3U files)
+        # Controllers
+        self.volume_controller = VolumeController(self)
+        self.metadata_poller = MetadataPoller(self)
+        self.playlist_loader = PlaylistLoader(self)
+        self.playlist_navigator = PlaylistNavigator(self)
+
     MAX_PLAYLIST_ITEMS = MAX_PLAYLIST_ITEMS
 
     def compose(self) -> ComposeResult:
-        """Compose is handled by the active screen."""
         yield Header()
         yield Footer()
 
@@ -119,319 +112,122 @@ class MusicPlayerApp(App):
         setup_logging()
         logger.info("Application mounted")
         self.title = "Music Player"
-        # initialize player volume
         try:
             self.mpv.set_volume(self.volume)
         except Exception:
             logger.debug("set_volume failed on mount", exc_info=True)
-        # progress update and metadata polling
         self.set_interval(0.5, self.update_progress)
-        self.set_interval(1.0, self._refresh_metadata)
-
-        # Start in radio mode via screen abstraction
+        self.set_interval(1.0, self.metadata_poller.refresh)
         self.push_screen(RadioScreen())
 
-    @profile
-    def update_volume_ui(self):
-        try:
-            vol = self.query_one("#volume-indicator", VolumeIndicator)
-            vol.volume = self.volume
-            vol.muted = self.muted
-        except Exception:
-            logger.debug("update_volume_ui failed", exc_info=True)
+    # === Volume actions (delegate to VolumeController) ===
 
-    @profile
     def action_volume_up(self):
-        self.volume = min(100, getattr(self, "volume", 50) + 5)
-        if self.muted:
-            self.muted = False
-        try:
-            self.mpv.set_volume(self.volume)
-        except Exception:
-            logger.warning("set_volume failed", exc_info=True)
-        self.update_volume_ui()
+        self.volume_controller.action_volume_up()
 
-    @profile
     def action_volume_down(self):
-        self.volume = max(0, getattr(self, "volume", 50) - 5)
-        if self.volume == 0:
-            self.muted = True
-        else:
-            self.muted = False
-        try:
-            self.mpv.set_volume(self.volume)
-        except Exception:
-            logger.warning("set_volume failed", exc_info=True)
-        self.update_volume_ui()
+        self.volume_controller.action_volume_down()
+
+    def action_toggle_mute(self):
+        self.volume_controller.action_toggle_mute()
+
+    # === Playback actions ===
 
     @profile
-    def action_toggle_mute(self):
-        if not getattr(self, "muted", False):
-            self._prev_volume = getattr(self, "volume", 50)
-            self.muted = True
-            try:
-                self.mpv.set_volume(0)
-            except Exception:
-                logger.warning("set_volume(0) failed", exc_info=True)
+    def action_toggle_play(self):
+        if self.mpv.is_paused():
+            self.mpv.unpause()
+            self.update_now_playing(self.current_title, self.option_mode, "▶")
         else:
-            self.muted = False
-            self.volume = getattr(self, "_prev_volume", 50)
-            try:
-                self.mpv.set_volume(self.volume)
-            except Exception:
-                logger.warning("set_volume failed", exc_info=True)
-        self.update_volume_ui()
+            self.mpv.pause()
+            self.update_now_playing(self.current_title, self.option_mode, "⏸")
 
-    async def fetch_duration(self, item: ListItem) -> None:
-        """Fetch the duration of a local MP3 and update its list item.
-
-        This is a plain coroutine that runs off the main thread when launched via
-        ``self.run_worker(self.fetch_duration, item)`` from ``load_local_files``
-        (the correct Textual worker entry point). It resolves the item's ``source``
-        ``Path``/string, reads the tag with mutagen, stores the duration in
-        ``item.data['duration']``, and refreshes the visible label.
-        """
-        data = getattr(item, "data", None)
-        if not isinstance(data, dict):
-            return
-        src = data.get("source")
-        if src is None:
-            return
-        # Skip radio/stream URLs – duration is not available from local tags.
-        if isinstance(src, str) and src.startswith(
-            ("http://", "https://", "rtmp://", "ftp://")
-        ):
-            return
+    @profile
+    def action_play(self):
         try:
-            src_path = Path(src)
-        except (TypeError, ValueError):
-            return
-
-        try:
-            audio = MutagenFile(str(src_path))
-            duration = int(audio.info.length) if audio and audio.info else None
+            self.mpv.unpause()
         except Exception:
-            logger.debug("mutagen read failed for %s", src_path, exc_info=True)
-            duration = None
+            logger.warning("unpause failed", exc_info=True)
+        self.update_now_playing(self.current_title, self.option_mode, "▶")
 
-        data["duration"] = duration
+    @profile
+    def action_pause(self):
         try:
-            label_text = data.get("title") or (src_path.name if src_path else "")
-            self.call_from_thread(
-                item.query_one(Label).update,
-                f"{label_text:<40} {fmt_mmss(duration)}",
-            )
+            self.mpv.pause()
         except Exception:
-            # Widget may have been torn down; nothing to update.
-            logger.debug("label update failed (widget torn down)", exc_info=True)
+            logger.warning("pause failed", exc_info=True)
+        self.update_now_playing(self.current_title, self.option_mode, "⏸")
 
-    @profile_async
-    async def on_radio_set_changed(self, event):
-        """Handle mode switch via screen abstraction."""
-        radio = event.pressed.id == "radio-option"
-        new_mode = "radio" if radio else "local"
+    @profile
+    def action_stop(self):
+        self.mpv.stop()
+        self.currently_playing = None
+        self._stream_source = False
+        self.current_title = "Nothing playing"
 
-        if self.option_mode != new_mode:
-            self.mpv.stop()
-            self.current_title = "Nothing playing"
-            self.update_now_playing("Nothing playing", "", "⏹")
-
-        self.option_mode = new_mode
-
-        # Switch screens instead of toggling visibility (defensive: screen stack
-        # may not exist in unit tests that bypass the full Textual lifecycle)
         try:
-            current = self.screen
-            if radio:
-                if not isinstance(current, RadioScreen):
-                    self.switch_screen(RadioScreen())
+            bar = self.query_one(ProgressBar)
+            bar.progress = 0
+            bar.duration = 0
+        except Exception:
+            logger.debug("ProgressBar not available in action_stop", exc_info=True)
+
+        self.update_now_playing("Nothing playing", "", "⏹")
+
+    @profile
+    def action_seek_forward(self):
+        self.mpv.seek(5)
+
+    @profile
+    def action_seek_backward(self):
+        self.mpv.seek(-5)
+
+    def _seek_to_percent(self, percent: float):
+        try:
+            dur = self.mpv.get_duration()
+            if not dur or dur <= 0:
+                return
+            target = int(dur * percent)
+            if hasattr(self.mpv, "seek_absolute"):
+                self.mpv.seek_absolute(target)
             else:
-                if not isinstance(current, LocalScreen):
-                    self.switch_screen(LocalScreen())
+                pos = self.mpv.get_time_pos() or 0
+                self.mpv.seek(target - int(pos))
         except Exception:
-            logger.debug("Screen switch failed (no screen stack?)", exc_info=True)
+            logger.debug("_seek_to_percent failed", exc_info=True)
+
+    def action_seek_to_10(self):
+        self._seek_to_percent(0.10)
+
+    def action_seek_to_50(self):
+        self._seek_to_percent(0.50)
+
+    def action_seek_to_90(self):
+        self._seek_to_percent(0.90)
+
+    # === Metadata polling (thin wrapper for backward compatibility) ===
+
+    def _refresh_metadata(self):
+        self.metadata_poller.refresh()
+
+    # === Playlist loading (thin wrappers for backward compatibility) ===
 
     @profile_async
     async def load_local_files(self, path: Path):
-        """Load all local MP3 files under ``path`` (recursively) into ``#local-list``.
-
-        * Walks ``path`` recursively, so nested music folders are included.
-        * Mounts items in batches (``self.playlist_batch_size``) and yields to the event
-          loop between batches to keep the UI responsive.
-        * Honors ``self.max_playlist_items`` — stops once the cap is reached.
-        * Launches a background ``fetch_duration`` worker per file (like before).
-        """
-        local_list = self.query_one("#local-list", ListView)
-        local_list.index = None  # prevent index tracking
-        local_list.clear()
-        self.local_items = {}  # keep a mapping for easy update
-
-        max_items = self.max_playlist_items or float("inf")
-        batch_size = self.playlist_batch_size
-        batch: list = []
-        count = 0
-
-        for root, _dirs, files in os.walk(path):
-            for name in sorted(files):
-                if not name.lower().endswith(".mp3"):
-                    continue
-
-                file = Path(root) / name
-                item = ListItem(Label(f"{file.name:<40} --:--"))
-                item.data = ItemData(source=file, title=file.name, duration=None)
-                batch.append(item)
-                self.local_items[file] = item
-                count += 1
-
-                if len(batch) >= batch_size:
-                    await local_list.mount(*batch)
-                    batch.clear()
-                    await asyncio.sleep(0)  # yield to the event loop
-
-                if count >= max_items:
-                    # Flush any remaining batched items before stopping.
-                    if batch:
-                        await local_list.mount(*batch)
-                        batch.clear()
-                    break
-            else:
-                continue
-            break  # inner max_items hit — stop walking entirely
-
-        # Flush any remaining batched items.
-        if batch:
-            await local_list.mount(*batch)
-            batch.clear()
-
-        # Fire-and-forget: fetch duration in background for each loaded item (Textual worker).
-        # NOTE: Textual's run_worker(work, name, ...) treats the 2nd positional as the
-        # worker *name*, NOT an arg to `work`. Bind `item` via partial so fetch_duration
-        # actually receives it. `exit_on_error=False` keeps the TUI alive if a tag read
-        # fails (defensive: don't crash the app over a missing duration).
-        for idx, item in enumerate(self.local_items.values()):
-            self.run_worker(
-                partial(self.fetch_duration, item),
-                name=f"fetch_duration:{idx}",
-                exit_on_error=False,
-            )
+        await self.playlist_loader.load_local_files(path)
 
     @profile_async
     async def load_m3u(self, path: Path):
-        """Load a local M3U playlist into ``#local-list`` in batches.
+        await self.playlist_loader.load_m3u(path)
 
-        * Supports ``#EXTINF`` metadata lines and resolves relative paths.
-        * Yields to the event-loop between batches so the UI stays responsive.
-        * Honors ``self.max_playlist_items``.
-        * (Optional) fetches song duration lazily – see ``self.fetch_duration``.
-        """
-        local_list: ListView = self.query_one("#local-list", ListView)
-        local_list.clear()
-
-        base_dir = path.parent
-        max_items = self.max_playlist_items or float("inf")
-        batch_size = self.playlist_batch_size
-
-        async def line_generator() -> AsyncIterator[str]:
-            """Yield stripped, non-empty lines from the file."""
-            if aiofiles:  # async path
-                async with aiofiles.open(
-                    path, mode="r", encoding="utf-8", errors="replace"
-                ) as f:
-                    async for raw in f:
-                        line = raw.strip()
-                        if line:
-                            yield line
-            else:  # sync fallback (still fast)
-                with open(path, encoding="utf-8", errors="replace") as f:
-                    for raw in f:
-                        line = raw.strip()
-                        if line:
-                            yield line
-
-        batch: list = []
-        pending_meta: str | None = None
-        pending_dur: int | None = None
-        count = 0
-
-        async for line in line_generator():
-            if line.startswith("#EXTINF"):
-                pending_dur, pending_meta = parse_extinf(line)
-                continue
-
-            if line.startswith("#"):
-                continue
-
-            source = resolve_source(base_dir, line)
-            label = pending_meta or Path(source).name
-            duration = pending_dur
-
-            pending_meta = None
-            pending_dur = None
-
-            duration_str = fmt_mmss(duration) if duration is not None else ""
-            display = f"{label:<40} {duration_str}"
-            item = ListItem(Label(display))
-            item.data = ItemData(
-                source=source,
-                title=label,
-                duration=duration,
-                meta=label,
-            )
-            item._meta_label = label
-
-            batch.append(item)
-            count += 1
-
-            if count >= max_items:
-                break
-
-            if len(batch) >= batch_size:
-                await local_list.mount(*batch)
-                batch.clear()
-                if count % 500 == 0:
-                    await asyncio.sleep(0)
-
-        # Mount any leftovers
-        await local_list.mount(*batch)
-
-        if self.fetch_duration_eager:
-            asyncio.create_task(self._populate_missing_durations(local_list))
+    async def fetch_duration(self, item: ListItem) -> None:
+        await self.playlist_loader.fetch_duration(item)
 
     async def _populate_missing_durations(self, list_view: ListView):
-        """Walk already-mounted items and fill missing durations from file tags."""
-        for item in list_view.children:
-            data = getattr(item, "data", None)
-            if not isinstance(data, dict):
-                continue
-            if data.get("duration") is not None:
-                continue
+        await self.playlist_loader._populate_missing_durations(list_view)
 
-            src = data.get("source")
-            if src is None:
-                continue
-            if isinstance(src, str) and src.startswith(
-                ("http://", "https://", "rtmp://", "ftp://")
-            ):
-                continue
-            try:
-                src_path = Path(src)
-            except (TypeError, ValueError):
-                continue
-            if not src_path.exists():
-                continue
+    # === Playlist navigation (delegate to PlaylistNavigator) ===
 
-            try:
-                audio = await asyncio.to_thread(MutagenFile, src_path, easy=True)
-                dur = int(audio.info.length) if audio and audio.info else None
-                if dur is not None:
-                    data["duration"] = dur
-                    label_text = data.get("meta") or data.get("title") or src_path.name
-                    label = item.query_one(Label)
-                    label.update(f"{label_text:<40} {fmt_mmss(dur)}")
-            except Exception:
-                logger.debug("duration fill failed for %s", src_path, exc_info=True)
-
-    @profile_async
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
         if button_id == "play":
@@ -443,6 +239,81 @@ class MusicPlayerApp(App):
         elif button_id == "stop":
             self.mpv.stop()
             self.update_now_playing("Nothing playing", "", "⏹")
+        elif button_id == "prev":
+            await self.playlist_navigator.play_previous()
+        elif button_id == "next":
+            await self.playlist_navigator.play_next()
+
+    def action_play_playlist(self) -> None:
+        """Start playback from the first item in the local playlist, if any."""
+        try:
+            local_list = self.query_one("#local-list")
+        except Exception:
+            logger.warning("No local list widget found")
+            self.update_now_playing("No local list", "", "⚠")
+            return
+
+        items = self._resolve_playlist_items(local_list)
+        if not items:
+            logger.debug("No items in playlist")
+            self.update_now_playing("No items in playlist", "", "⚠")
+            return
+
+        first = items[0]
+        data = getattr(first, "data", None)
+        if data is None:
+            logger.debug("Invalid playlist item (no data)")
+            self.update_now_playing("Invalid playlist item", "", "⚠")
+            return
+
+        try:
+            self.play_local(data)
+        except Exception:
+            logger.warning("play_local failed for playlist item", exc_info=True)
+            self.update_now_playing("Failed to play playlist item", "", "⚠")
+            return
+        try:
+            local_list.index = 0
+        except Exception:
+            logger.debug("setting list index failed", exc_info=True)
+
+    def action_focus_search(self) -> None:
+        """Focus the search input (bound to /)."""
+        try:
+            search_input = self.query_one("#search-input", Input)
+            search_input.focus()
+        except Exception:
+            logger.debug("search-input not available")
+
+    # === Mode switching ===
+
+    @profile_async
+    async def on_radio_set_changed(self, event):
+        """Handle mode switch via screen abstraction."""
+        radio = event.pressed.id == "radio-option"
+        new_mode = "radio" if radio else "local"
+
+        if self.option_mode != new_mode:
+            self.mpv.stop()
+            self.currently_playing = None
+            self._stream_source = False
+            self.current_title = "Nothing playing"
+            self.update_now_playing("Nothing playing", "", "⏹")
+
+        self.option_mode = new_mode
+
+        try:
+            current = self.screen
+            if radio:
+                if not isinstance(current, RadioScreen):
+                    self.switch_screen(RadioScreen())
+            else:
+                if not isinstance(current, LocalScreen):
+                    self.switch_screen(LocalScreen())
+        except Exception:
+            logger.debug("Screen switch failed (no screen stack?)", exc_info=True)
+
+    # === Event handlers ===
 
     @profile_async
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -462,11 +333,9 @@ class MusicPlayerApp(App):
                     self.play_local(file_path)
 
     def _toast(self, msg: str, extra: str = "", icon: str = ICON_ERR) -> None:
-        """Convenient wrapper around `update_now_playing`."""
         self.update_now_playing(msg, extra, icon)
 
     async def _maybe_run_in_thread(self, func, *args, **kwargs):
-        """Run a synchronous function in a thread and return its result."""
         if asyncio.iscoroutinefunction(func):
             return await func(*args, **kwargs)
         return await asyncio.to_thread(func, *args, **kwargs)
@@ -501,7 +370,14 @@ class MusicPlayerApp(App):
 
             # LOCAL MODE – M3U playlist
             if self.option_mode == "local" and ext == ".m3u":
-                await self.load_m3u(path)
+                # Cancel the pending local-file scan (LocalScreen timer)
+                try:
+                    local_screen = self.screen
+                    if hasattr(local_screen, 'cancel_pending_local_load'):
+                        local_screen.cancel_pending_local_load()
+                except Exception:
+                    pass
+                await self.playlist_loader.load_m3u(path)
                 self.notify(f"✅Loaded playlist {path.name}")
                 return
 
@@ -512,9 +388,12 @@ class MusicPlayerApp(App):
             logger.exception("on_directory_tree_file_selected failed")
             self.notify(f"❌ Error: {type(exc).__name__}", severity="error")
 
+    # === Station loading ===
+
     @profile_async
     async def load_stations(self, path: Path) -> None:
         """Load the stations JSON file, build a StationPlayer and populate the ListView."""
+        import json
         try:
             stations_data = await self._load_json(path)
         except FileNotFoundError:
@@ -533,14 +412,14 @@ class MusicPlayerApp(App):
 
         for idx, station in enumerate(self.stations.stations):
             item = ListItem(Label(f"{idx}: {station['name']}"))
-            item.data = station  # store the raw dict for later use
+            item.data = station
             await station_list.mount(item)
 
         self.notify(f"✅ Loaded {len(self.stations.stations)} stations")
 
     @profile_async
     async def load_stations_ui(self) -> None:
-        """Populate the station ListView from the current ``self.stations`` object."""
+        """Populate the station ListView from the current self.stations object."""
         if not self.stations:
             return
         station_list = self.query_one("#station-list", ListView)
@@ -550,14 +429,17 @@ class MusicPlayerApp(App):
             item.data = station
             await station_list.mount(item)
 
+    async def _load_json(self, path: Path):
+        async with await open_file(path, mode="r", encoding="utf-8") as f:
+            text = await f.read()
+            import json
+            return json.loads(text)
+
+    # === UI updates ===
+
     @profile
     def update_now_playing(self, title: str, source: str, state: str):
-        """Update the NowPlaying widget via a single message-posting path.
-
-        The widget is updated exclusively through ``NowPlayingMessage`` —
-        there is no direct-assignment fallback, keeping the control flow
-        simple and debuggable.
-        """
+        """Update the NowPlaying widget via a single message-posting path."""
         if title:
             self.current_title = title
         if os.getenv("PYTUIP_DEBUG"):
@@ -571,111 +453,7 @@ class MusicPlayerApp(App):
             msg_title = title if title else self.current_title
             now.post_message(NowPlayingMessage(self, msg_title, source, state))
         except Exception:
-            # If the widget isn't mounted (e.g. during tests or early startup),
-            # log and ignore — the internal `current_title` preserves state
             logger.debug("NowPlaying widget not mounted; state preserved internally")
-
-    @profile
-    def _refresh_metadata(self):
-        """Poll for stream/file metadata and update the Now Playing title.
-
-        A *stream* (live radio, or an M3U entry that is a URL) is polled for mpv's
-        ``icy-title`` / ``media-title``. A *local file* has its tags read via mutagen
-        (falling back to mpv's media-title). Whether to poll as a stream is decided by
-        ``self._stream_source`` — not ``option_mode`` — so M3U playlists containing
-        radio station URLs are treated as streams and get live metadata.
-        """
-        if getattr(self, "_stream_source", False):
-            self._refresh_stream_metadata()
-            return
-        if getattr(self, "currently_playing", None) == "local":
-            self._refresh_local_metadata()
-            return
-
-    @profile
-    def _refresh_stream_metadata(self):
-        """Poll a live stream for its ``icy-title`` / ``media-title`` and update the title."""
-        try:
-            if not getattr(self, "_stream_source", False):
-                return
-            player = getattr(self.mpv, "player", None)
-            if player is None:
-                return
-            # try property API
-            meta = None
-            if hasattr(player, "get_property"):
-                try:
-                    meta = player.get_property("icy-title") or player.get_property(
-                        "media-title"
-                    )
-                except Exception:
-                    meta = None
-            # try attribute fallback
-            if not meta:
-                meta = getattr(player, "media_title", None) or getattr(
-                    player, "title", None
-                )
-            if meta and meta != self.current_title:
-                self.current_title = meta
-                self.update_now_playing(meta, "Radio", "▶")
-        except Exception:
-            logger.debug("_refresh_stream_metadata failed", exc_info=True)
-
-    @profile
-    def _refresh_local_metadata(self):
-        """Read tags for the currently playing local file and update the title.
-
-        Only does work when a new local source starts playing (the resolved title is
-        cached per source), so the 1s poll stays cheap.
-        """
-        if getattr(self, "currently_playing", None) != "local":
-            return
-        if getattr(self, "_stream_source", False):
-            return
-        source = getattr(self, "_current_local_source", None)
-        if not source:
-            return
-        if getattr(self, "_local_meta_source", None) == str(source):
-            return
-        self._local_meta_source = str(source)
-
-        title = self._read_local_tags(source)
-        if not title:
-            player = getattr(self.mpv, "player", None)
-            if player is not None and hasattr(player, "get_property"):
-                try:
-                    title = player.get_property("media-title")
-                except Exception:
-                    logger.debug("media-title read failed", exc_info=True)
-        if title and title != self.current_title:
-            self.current_title = title
-            self.update_now_playing(title, "Local File", "▶")
-
-    @profile
-    def _read_local_tags(self, source) -> str | None:
-        """Return ``artist - title`` (or the best available) from a file's tags."""
-        try:
-            info = MutagenFile(str(source), easy=True)
-        except Exception:
-            logger.debug("mutagen tag read failed for %s", source, exc_info=True)
-            return None
-        if not info:
-            return None
-        try:
-            artist = (info.get("artist") or [None])[0]
-            track = (info.get("title") or [None])[0]
-        except Exception:
-            logger.debug("unexpected mutagen tag shape for %s", source, exc_info=True)
-            return None
-        if artist and track:
-            return f"{artist} - {track}"
-        return track or None
-
-    @profile_async
-    async def _load_json(self, path: Path) -> Any:
-        async with await open_file(path, mode="r", encoding="utf-8") as f:
-            text = await f.read()
-            return json.loads(text)
 
     @profile
     def update_progress(self):
@@ -698,8 +476,10 @@ class MusicPlayerApp(App):
                 getattr(self, "_stream_source", False)
                 and getattr(self, "currently_playing", None) is not None
             ):
+                bar.stream = True
                 bar.meta = self.current_title or ""
             else:
+                bar.stream = False
                 bar.meta = ""
         except Exception:
             logger.debug("progress meta update failed", exc_info=True)
@@ -716,80 +496,7 @@ class MusicPlayerApp(App):
         except Exception:
             logger.debug("now playing update failed", exc_info=True)
 
-    @profile
-    def action_toggle_play(self):
-        if self.mpv.is_paused():
-            self.mpv.unpause()
-            self.update_now_playing(self.current_title, self.option_mode, "▶")
-        else:
-            self.mpv.pause()
-            self.update_now_playing(self.current_title, self.option_mode, "⏸")
-
-    @profile
-    def action_play(self):
-        """Explicit play command (bound to 'p')."""
-        try:
-            self.mpv.unpause()
-        except Exception:
-            logger.warning("unpause failed", exc_info=True)
-        self.update_now_playing(self.current_title, self.option_mode, "▶")
-
-    @profile
-    def action_pause(self):
-        """Explicit pause command (bound to 'k')."""
-        try:
-            self.mpv.pause()
-        except Exception:
-            logger.warning("pause failed", exc_info=True)
-        self.update_now_playing(self.current_title, self.option_mode, "⏸")
-
-    @profile
-    def action_stop(self):
-        self.mpv.stop()
-        self.currently_playing = None
-        self._stream_source = False
-        self.current_title = "Nothing playing"
-
-        try:
-            bar = self.query_one(ProgressBar)
-            bar.progress = 0
-            bar.duration = 0
-        except Exception:
-            logger.debug("ProgressBar not available in action_stop", exc_info=True)
-
-        self.update_now_playing("Nothing playing", "", "⏹")
-
-    @profile
-    def action_seek_forward(self):
-        self.mpv.seek(5)
-
-    @profile
-    def action_seek_backward(self):
-        self.mpv.seek(-5)
-
-    def _seek_to_percent(self, percent: float):
-        """Seek to a percentage of the current duration (0.0-1.0)."""
-        try:
-            dur = self.mpv.get_duration()
-            if not dur or dur <= 0:
-                return
-            target = int(dur * percent)
-            if hasattr(self.mpv, "seek_absolute"):
-                self.mpv.seek_absolute(target)
-            else:
-                pos = self.mpv.get_time_pos() or 0
-                self.mpv.seek(target - int(pos))
-        except Exception:
-            logger.debug("_seek_to_percent failed", exc_info=True)
-
-    def action_seek_to_10(self):
-        self._seek_to_percent(0.10)
-
-    def action_seek_to_50(self):
-        self._seek_to_percent(0.50)
-
-    def action_seek_to_90(self):
-        self._seek_to_percent(0.90)
+    # === Play actions ===
 
     @profile_async
     async def play_station(self, station, idx):
@@ -808,12 +515,7 @@ class MusicPlayerApp(App):
 
     @profile
     def play_local(self, path):
-        """Play a local file or URL.
-
-        Accepts either:
-        - a dict: {"source": <str>, "meta": <label>} (as produced by load_m3u),
-        - a Path or string path/URL.
-        """
+        """Play a local file or URL."""
         source = None
         meta_label = None
         if isinstance(path, dict):
@@ -902,14 +604,8 @@ class MusicPlayerApp(App):
         except Exception:
             logger.debug("update_now_playing failed", exc_info=True)
 
-    @profile
     def _resolve_playlist_items(self, local_list) -> list:
-        """Resolve a list widget's items robustly.
-
-        Textual's ``ListView`` has no ``items`` attribute (only ``children``), while
-        test fakes often expose ``items``. Try ``items`` first, then ``children``,
-        and never raise — always return a plain list (possibly empty).
-        """
+        """Resolve a list widget's items robustly."""
         for attr in ("items", "children"):
             try:
                 candidate = getattr(local_list, attr, None)
@@ -923,37 +619,3 @@ class MusicPlayerApp(App):
             except TypeError:
                 logger.debug("list widget %s is not iterable", attr, exc_info=True)
         return []
-
-    @profile
-    def action_play_playlist(self) -> None:
-        """Start playback from the first item in the local playlist, if any."""
-        try:
-            local_list = self.query_one("#local-list")
-        except Exception:
-            logger.warning("No local list widget found")
-            self.update_now_playing("No local list", "", "⚠")
-            return
-
-        items = self._resolve_playlist_items(local_list)
-        if not items:
-            logger.debug("No items in playlist")
-            self.update_now_playing("No items in playlist", "", "⚠")
-            return
-
-        first = items[0]
-        data = getattr(first, "data", None)
-        if data is None:
-            logger.debug("Invalid playlist item (no data)")
-            self.update_now_playing("Invalid playlist item", "", "⚠")
-            return
-
-        try:
-            self.play_local(data)
-        except Exception:
-            logger.warning("play_local failed for playlist item", exc_info=True)
-            self.update_now_playing("Failed to play playlist item", "", "⚠")
-            return
-        try:
-            local_list.index = 0
-        except Exception:
-            logger.debug("setting list index failed", exc_info=True)

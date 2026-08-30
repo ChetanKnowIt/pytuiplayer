@@ -1,6 +1,10 @@
 /* ===========================
-   Global / App Background
-=========================== */
+   Winamp Retro Theme
+   Dark background, LED green, amber accents
+   Blocky 90s media player aesthetic
+   =========================== */
+
+/* Global / App Background */
 Screen {
     background: #0b0b0b;
     color: #f0e6c8;
@@ -8,7 +12,7 @@ Screen {
 
 /* ===========================
    Header / Footer
-=========================== */
+   =========================== */
 Header {
     background: #111;
     color: #ffd24a;
@@ -22,36 +26,40 @@ Footer {
     color: #bfb19a;
     height: 1;
     padding: 0 2;
-} 
+}
 
 /* ===========================
-   Now Playing Box - Full Width
-=========================== */
+   Now Playing Box - LED Display
+   =========================== */
 #now-playing {
     border: round #ff9e00;
-    padding: 1 1;
+    padding: 1 2;
     margin: 1;
     background: #0b0b0b;
     text-style: bold;
-    color: #ffd24a;
-    height: 6;
+    color: #39ff14;
+    height: 4;
     content-align: left middle;
 }
 
 /* ===========================
    Control Buttons
-=========================== */
+   =========================== */
 #controls {
-    padding: 1 1;
+    padding: 1 2;
     margin: 1 1;
     content-align: center middle;
-    height: 6;
+    height: 4;
     background: #0b0b0b;
 }
 
 #controls Button {
+    background: #ffd24a;
     color: #0b0b0b;
-    border: round #ffd24a;    
+    border: round #ffd24a;
+    min-width: 6;
+    margin: 0 1;
+    text-style: bold;
 }
 
 #controls Button:hover {
@@ -60,43 +68,52 @@ Footer {
 }
 
 #controls Button:focus {
-    border: round #ffd24a;
+    border: round #39ff14;
 }
 
-#volume-indicator{
-    background: #0b0b0b;
-    color: #0b0b0b;
+#controls Button:disabled {
+    background: #333;
+    color: #666;
+    border: round #444;
+}
+
+#volume-indicator {
+    background: #1a1a1a;
+    color: #39ff14;
     border: round #ffd24a;
     padding: 0 1;
     margin: 0 0;
     height: 3;
     width: 25;
     content-align: center middle;
+    text-style: bold;
 }
 
 #volume-indicator:hover {
     background: #ffb84d;
+    color: #0b0b0b;
     border: round #0b0b0b;
 }
 
 #volume-indicator:focus {
     border: round #ffd24a;
 }
+
 /* ===========================
-   Progress Bar - Full Width
-=========================== */
+   Progress Bar - Seek Bar
+   =========================== */
 #progress {
-    padding: 1 1;
+    padding: 1 2;
     margin: 1;
     color: #39ff14;
     text-style: bold;
     content-align: left middle;
-    width:640;
+    height: 3;
 }
 
 /* ===========================
    Main Content Layout
-=========================== */
+   =========================== */
 #main-content {
     height: 1fr;
 }
@@ -114,8 +131,40 @@ Footer {
 }
 
 /* ===========================
+   Search Input
+   =========================== */
+#search-label {
+    color: #ffd24a;
+    height: 1;
+    margin: 0 1;
+}
+
+#search-input {
+    border: round #ff9e00;
+    padding: 0 1;
+    margin: 0 1;
+    background: #151515;
+    color: #f0e6c8;
+    height: 3;
+}
+
+#search-input:focus {
+    border: round #39ff14;
+}
+
+/* ===========================
+   Loading Status
+   =========================== */
+#loading-status {
+    color: #ffd24a;
+    height: 1;
+    margin: 0 1;
+    text-style: bold;
+}
+
+/* ===========================
    Lists: Stations / Local files
-=========================== */
+   =========================== */
 ListView {
     border: round #ff9e00;
     padding: 1;
@@ -137,7 +186,7 @@ ListItem.-selected {
 
 /* ===========================
    Directory Tree
-=========================== */
+   =========================== */
 DirectoryTree {
     border: round #333;
     padding: 1;
@@ -148,7 +197,7 @@ DirectoryTree {
 
 /* ===========================
    Radio Buttons
-=========================== */
+   =========================== */
 RadioSet {
     border: round #333;
     padding: 1;
@@ -162,14 +211,14 @@ RadioButton {
 
 /* ===========================
    Labels
-=========================== */
+   =========================== */
 Label {
     color: #ffffff;
 }
 
 /* ===========================
    Disabled Widgets
-=========================== */
+   =========================== */
 Widget:disabled {
     opacity: 0.4;
 }

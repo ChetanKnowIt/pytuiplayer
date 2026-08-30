@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pytest import MonkeyPatch
 
+from pytuiplayer.playlist import PlaylistLoader
 from pytuiplayer.tui_app import MusicPlayerApp
 
 
@@ -81,7 +82,7 @@ def test_load_stations_ui_updates_list():
 
 
 def test_progressbar_unknown_duration():
-    from pytuiplayer.tui_app import ProgressBar
+    from pytuiplayer.widgets import ProgressBar
 
     bar = ProgressBar()
     bar.progress = 0
@@ -91,7 +92,7 @@ def test_progressbar_unknown_duration():
 
 
 def test_progressbar_formats_mmss_and_shows_bar():
-    from pytuiplayer.tui_app import ProgressBar
+    from pytuiplayer.widgets import ProgressBar
 
     bar = ProgressBar()
     bar.progress = 75    # 1:15
@@ -99,7 +100,9 @@ def test_progressbar_formats_mmss_and_shows_bar():
 
     s = bar.render()
     assert "01:15 / 05:00" in s
-    assert s.startswith("[") and "]" in s
+    # Winamp-style: position marker and bar characters
+    assert "●" in s
+    assert "─" in s
 
 
 def test_seek_to_percent_uses_absolute_if_available() -> None:
@@ -215,7 +218,7 @@ def test_visibility_toggle_hides_unused_widgets():
     local = W()
     tree = W()
 
-    from pytuiplayer.tui_app import NowPlaying
+    from pytuiplayer.widgets import NowPlaying
     def query_one(sel, *a, **k):
         if sel == "#station-list":
             return station
@@ -255,7 +258,7 @@ def test_visibility_toggle_hides_unused_widgets():
 
 
 def test_progressbar_shows_radio_meta_when_streaming():
-    from pytuiplayer.tui_app import NowPlaying, ProgressBar
+    from pytuiplayer.widgets import NowPlaying, ProgressBar
 
     app = MusicPlayerApp()
     class FakePlayer:
@@ -514,28 +517,23 @@ def test_fetch_duration_method_updates_item_data(tmp_path: Path, monkeypatch: Mo
 
     # fetch_duration uses the module-level MutagenFile binding, so patch it there
     monkeypatch.setattr(
-        "pytuiplayer.tui_app.MutagenFile",
+        "pytuiplayer.playlist.MutagenFile",
         lambda *a, **k: types.SimpleNamespace(info=types.SimpleNamespace(length=137.0)),
     )
+
 
     # call_from_thread must run synchronously in unit tests
     app.call_from_thread = lambda fn, *a: fn(*a)
 
-    from textual.widgets import Label, ListItem
-
     file = tmp_path / "song.mp3"
     file.write_text("")  # exists on disk
-    label = Label("song.mp3")
-    item = ListItem(label)
-    item.data = {"source": file, "title": "song.mp3", "duration": None}
-    # In a live app the Label is mounted; here stub query_one to return it
-    item.query_one = lambda *a, **k: label
 
-    asyncio.run(app.fetch_duration(item))
+    # fetch_duration now takes item_data (dict), not ListItem
+    item_data = {"source": file, "title": "song.mp3", "duration": None}
 
-    assert item.data["duration"] == 137
-    # The visible label is updated via call_from_thread -> label.update(...)
-    assert "02:17" in str(item.query_one(Label).render())
+    asyncio.run(app.playlist_loader.fetch_duration(item_data))
+
+    assert item_data["duration"] == 137
 
 
 def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: MonkeyPatch):
@@ -584,7 +582,7 @@ def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: M
     assert captured.get("work") is not None
     # The work must be a partial that wraps fetch_duration with the item bound.
     assert isinstance(captured["work"], partial)
-    assert captured["work"].func.__func__ is MusicPlayerApp.fetch_duration
+    assert captured["work"].func.__func__ is PlaylistLoader.fetch_duration
     assert captured["work"].args == (app.local_items[mp3],)
     # The item must NOT be passed as run_worker's positional `name`, and the worker
     # must be allowed to fail without crashing the TUI.
@@ -607,7 +605,7 @@ def test_populate_missing_durations_handles_local_path_source(tmp_path: Path, mo
     # The app uses the module-level MutagenFile binding; patch it there.
     def fake_mutagen_file(*a, **k):
         return types.SimpleNamespace(info=types.SimpleNamespace(length=95.0))
-    monkeypatch.setattr("pytuiplayer.tui_app.MutagenFile", fake_mutagen_file)
+    monkeypatch.setattr("pytuiplayer.playlist.MutagenFile", fake_mutagen_file)
 
     from textual.widgets import Label, ListItem
 

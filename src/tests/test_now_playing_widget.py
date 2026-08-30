@@ -1,4 +1,4 @@
-from pytuiplayer.tui_app import NowPlaying, NowPlayingMessage
+from pytuiplayer.widgets import NowPlaying, NowPlayingMessage
 
 
 def test_now_playing_message_updates_widget():
