@@ -176,6 +176,7 @@ class MusicPlayerApp(App):
         self.currently_playing = None
         self._stream_source = False
         self.current_title = "Nothing playing"
+        self._clear_playing_tags()
 
         try:
             bar = self.query_one(NowPlaying)
@@ -411,6 +412,7 @@ class MusicPlayerApp(App):
             self.currently_playing = None
             self._stream_source = False
             self.current_title = "Nothing playing"
+            self._clear_playing_tags()
             self.update_now_playing("Nothing playing", "", "⏹")
 
         self.option_mode = new_mode
@@ -618,6 +620,13 @@ class MusicPlayerApp(App):
         self.currently_playing = "radio"
         self._stream_source = True
         self.current_title = station["name"]
+        # Start in "connecting" state — will clear when metadata arrives
+        try:
+            now = self.query_one(NowPlaying)
+            now.connecting = True
+            now.meta = ""
+        except Exception:
+            pass
         self.update_now_playing(station["name"], "Radio", "▶")
         # Track recently-played item.
         try:
@@ -628,8 +637,53 @@ class MusicPlayerApp(App):
         try:
             list_view = self.query_one("#station-list", ListView)
             list_view.index = idx
+            self._tag_playing_item(list_view, idx)
         except Exception:
             logger.debug("station-list not available for index update", exc_info=True)
+
+    def _tag_playing_item(self, list_view, idx: int | None) -> None:
+        """Mark the currently-playing list item with a `playing` class and clear others."""
+        try:
+            children = list(getattr(list_view, "children", []))
+            for i, child in enumerate(children):
+                if i == idx:
+                    child.add_class("playing")
+                    child.remove_class("not-playing")
+                else:
+                    child.add_class("not-playing")
+                    child.remove_class("playing")
+        except Exception:
+            logger.debug("_tag_playing_item failed", exc_info=True)
+
+    def _clear_playing_tags(self) -> None:
+        """Remove playing/not-playing classes from all list items."""
+        for selector in ("#station-list", "#local-list"):
+            try:
+                lv = self.query_one(selector, ListView)
+                for child in list(getattr(lv, "children", [])):
+                    child.remove_class("playing", "not-playing")
+            except Exception:
+                pass
+
+    def _tag_playing_item_for_source(self, source_str: str) -> None:
+        """Find the list item whose data.source matches source_str and tag it."""
+        try:
+            local_list = self.query_one("#local-list", ListView)
+            children = list(getattr(local_list, "children", []))
+            for i, child in enumerate(children):
+                data = getattr(child, "data", None)
+                if isinstance(data, dict):
+                    src = data.get("source")
+                else:
+                    src = getattr(data, "source", None) if data else None
+                if src is not None and str(src) == str(source_str):
+                    self._tag_playing_item(local_list, i)
+                    return
+            # No match found — still clear other tags
+            for child in children:
+                child.remove_class("playing", "not-playing")
+        except Exception:
+            logger.debug("_tag_playing_item_for_source failed", exc_info=True)
 
     @profile
     def play_local(self, path):
@@ -661,6 +715,14 @@ class MusicPlayerApp(App):
             self._current_local_source = source_str
             title = meta_label or Path(source_str).name
             self.current_title = title
+            # Start in "connecting" state for URL streams
+            try:
+                now = self.query_one(NowPlaying)
+                now.connecting = True
+                now.meta = ""
+            except Exception:
+                pass
+
             try:
                 self.update_now_playing(title, "Radio", "▶")
             except Exception:
@@ -670,6 +732,9 @@ class MusicPlayerApp(App):
                 self.history_tracker.record("local", title, source_str)
             except Exception:
                 logger.debug("history_tracker.record failed", exc_info=True)
+
+            # Tag the playing item in the local list
+            self._tag_playing_item_for_source(source_str)
             return
 
         # treat as local filesystem path
@@ -731,6 +796,9 @@ class MusicPlayerApp(App):
             self.history_tracker.record("local", title, source_path or source_str)
         except Exception:
             logger.debug("history_tracker.record failed", exc_info=True)
+
+        # Tag the playing item in the local list
+        self._tag_playing_item_for_source(str(source_path or source_str))
 
     def _resolve_playlist_items(self, local_list) -> list:
         """Resolve a list widget's items robustly."""

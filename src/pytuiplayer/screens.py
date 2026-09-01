@@ -151,9 +151,20 @@ class LocalScreen(ModeScreen):
     def compose_mode_content(self):
         yield Static("🔍 Search:", id="search-label")
         yield Input(placeholder="Type to filter tracks...", id="search-input")
-        yield DirectoryTree(str(Path.home()), id="directory-tree")
+        yield DirectoryTree(self._default_music_dir(), id="directory-tree")
         yield Static("", id="loading-status")
         yield ListView(id="local-list")
+
+    @staticmethod
+    def _default_music_dir() -> str:
+        """Prefer ~/Music for browsing; fall back to $HOME if it doesn't exist."""
+        music = Path.home() / "Music"
+        try:
+            if music.is_dir():
+                return str(music)
+        except Exception:
+            pass
+        return str(Path.home())
 
     def on_mount(self) -> None:
         super().on_mount()
@@ -167,7 +178,7 @@ class LocalScreen(ModeScreen):
         loading = self.query_one("#loading-status", Static)
         loading.update("📂 Scanning for MP3 files...")
         try:
-            await self.app.playlist_loader.load_local_files(Path.home())
+            await self.app.playlist_loader.load_local_files(Path(self._default_music_dir()))
             loading.update("✅ Ready")
         except Exception:
             loading.update("❌ Error loading files")

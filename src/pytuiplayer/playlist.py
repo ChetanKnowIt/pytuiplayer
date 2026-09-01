@@ -121,6 +121,25 @@ class PlaylistLoader:
 
         if loading:
             loading.update(f"✅ Loaded {count} tracks")
+            # Show total playlist duration where known
+            total_secs = 0
+            known_dur = 0
+            for data in self.app.local_items.values():
+                dur = data.get("duration")
+                if isinstance(dur, (int, float)) and dur > 0:
+                    total_secs += dur
+                    known_dur += 1
+            if count > 0:
+                if known_dur > 0:
+                    total_str = fmt_mmss(total_secs)
+                    loading.update(
+                        f"📂 Loaded {count} tracks "
+                        f"({known_dur} with dur — {total_str} total)"
+                    )
+                else:
+                    loading.update(
+                        f"✅ Loaded {count} tracks (durations loading...)"
+                    )
         for idx, item in enumerate(self.app.local_items.values()):
             self.app.run_worker(
                 partial(self.fetch_duration, item),
@@ -217,6 +236,25 @@ class PlaylistLoader:
 
         if loading:
             loading.update(f"✅ Loaded {count} tracks")
+            # Show total playlist duration where known
+            total_secs = 0
+            known_dur = 0
+            for data in self.app.local_items.values():
+                dur = data.get("duration")
+                if isinstance(dur, (int, float)) and dur > 0:
+                    total_secs += dur
+                    known_dur += 1
+            if count > 0:
+                if known_dur > 0:
+                    total_str = fmt_mmss(total_secs)
+                    loading.update(
+                        f"📂 Loaded {count} tracks "
+                        f"({known_dur} with dur — {total_str} total)"
+                    )
+                else:
+                    loading.update(
+                        f"✅ Loaded {count} tracks (durations loading...)"
+                    )
 
     async def _populate_missing_durations(self, list_view: ListView):
         """Walk already-mounted items and fill missing durations from file tags."""

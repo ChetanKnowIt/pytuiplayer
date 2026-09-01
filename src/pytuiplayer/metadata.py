@@ -53,6 +53,12 @@ class MetadataPoller:
             if meta and meta != self.app.current_title:
                 self.app.current_title = meta
                 self.app.update_now_playing(meta, "Radio", "▶")
+                # Clear connecting state when metadata arrives
+                try:
+                    now = self.app.query_one("NowPlaying")
+                    now.connecting = False
+                except Exception:
+                    pass
         except Exception:
             logger.debug("_refresh_stream_metadata failed", exc_info=True)
 

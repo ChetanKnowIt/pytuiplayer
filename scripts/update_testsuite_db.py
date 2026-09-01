@@ -61,6 +61,8 @@ FILE_DESCRIPTIONS = {
         "feature/09: shuffle/repeat modes (navigator index logic + z/r bindings).",
     "src/tests/test_feature_10_playlist_export.py":
         "feature/10: playlist export to EXTINF M3U (PlaylistExporter + e binding).",
+    "src/tests/test_feature_12_ui_polish.py":
+        "feature/12: UI polish (~/Music scan, faster marquee, flexible volume, button pressed).",
 }
 
 # ---------------------------------------------------------------------------
