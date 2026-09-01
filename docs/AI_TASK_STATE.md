@@ -1,13 +1,13 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`feature/12-ui-polish` (created from `main`). 156 tests pass, ruff clean.
+`main` (merged feature/12-ui-polish). 156 tests pass, ruff clean. All commits pushed to origin.
 
 ## Completed This Session
 
 ### Architecture Review (complete)
-- Read and analyzed all source modules: `tui_app.py` (now ~800 lines), `widgets.py` (216 lines),
-  `screens.py` (272 lines), `playlist.py` (399 lines), `metadata.py` (109 lines), `volume.py`
+- Read and analyzed all source modules: `tui_app.py` (~800 lines), `widgets.py` (216 lines),
+  `screens.py` (272 lines), `playlist.py` (396 lines), `metadata.py` (109 lines), `volume.py`
   (72 lines), `history.py` (81 lines), `exporter.py` (70 lines), `mpv_player.py` (100 lines),
   `station_player.py` (39 lines), `utils.py` (48 lines), `types.py` (21 lines), constants.py (18 lines).
 - Read and analyzed all 18 test files in `src/tests/` (156 tests total after adding 9 new).
@@ -15,14 +15,10 @@
 - Verified baseline: `uv run ruff check .` → All checks passed!; `uv run pytest -q` → 156 passed.
 
 ### UI Review & Rating (complete)
-- **Overall UI rating: 7.5/10** — solid Winamp retro aesthetic, competent implementation.
-- Documented 10 areas for improvement (seek bar precision, marquee speed, no active track
-  highlighting, default scan path is $HOME, volume bar too small, no button press feedback,
-  no connection status, loading status placement, station index prefix redundancy,
-  missing playlist total time display).
-- Proposed 8 UI polish items for `feature/12-ui-polish` (below).
+- **Overall UI rating: 7.5/10 → ~8.5/10** after polish.
+- Documented 10 areas for improvement; 8 were addressed in feature/12-ui-polish.
 
-### feature/12-ui-polish — UI Improvements (MERGED into working tree)
+### feature/12-ui-polish — UI Improvements (MERGED to main)
 All 8 planned items implemented + tested (9 new tests in `test_feature_12_ui_polish.py`):
 
 1. **Active playback indicator in lists** — `.playing` / `.not-playing` CSS classes on

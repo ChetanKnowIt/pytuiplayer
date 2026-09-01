@@ -32,6 +32,7 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/tests/testsuite_db.py` | SQLite test-inventory DB helpers (schema + idempotent upserts) |
 | `src/tests/test_backlog_coverage.py` | ROADMAP Test Backlog coverage (22 tests) |
 | `src/tests/test_feature_02_design_flows.py` | feature/02 acceptance tests (6 tests) |
+| `src/tests/test_feature_12_ui_polish.py` | feature/12 UI polish tests (marquee, connecting state, ~/Music default, total duration) |
 | `src/tests/test_tui_app.py` | App actions, loaders, visibility, regressions (21 tests) |
 | `scripts/` | Dev scripts and manual test scripts |
 | `scripts/update_testsuite_db.py` | Rebuild/enrich `testsuite.db` (files + backlog mirror) |
@@ -72,7 +73,7 @@ MusicPlayerApp
 
 | Widget | Type | Purpose |
 |--------|------|---------|
-| `NowPlaying(Static)` | Reactive | Combined LED display + seek bar (2-row compact widget) |
+| `NowPlaying(Static)` | Reactive | Combined LED display + seek bar (2-row compact widget) with marquee, connecting state, and visualizer support |
 | `NowPlayingMessage(Message)` | Message | Single update path from `update_now_playing()` to `NowPlaying` |
 | `VolumeIndicator(Static)` | Reactive | Volume/mute display |
 
@@ -169,7 +170,7 @@ every `uv run pytest` run (see `src/tests/testsuite_db.py`). It is not app data.
 - Pattern: Inject `FakeMPV` / `FakeMPVPlayer` via `app.mpv = ...`
 - Stub `app.query_one` and `app.update_now_playing` to avoid Textual DOM
 - Use `asyncio.run()` for async methods (pytest-asyncio is NOT installed)
-- Run: `uv run pytest -q` from repo root (currently **147 passed**; the `network`-marked radio test auto-skips offline, and is skipped entirely in CI). The live count is the source of truth — re-run `uv run pytest -q` rather than trusting a hardcoded number.
+- Run: `uv run pytest -q` from repo root (currently **156 passed**; the `network`-marked radio test auto-skips offline, and is skipped entirely in CI). The live count is the source of truth — re-run `uv run pytest -q` rather than trusting a hardcoded number.
 - Every pytest run also refreshes the SQLite inventory `testsuite.db`; view it with
   `uv run python scripts/report_testsuite_db.py` (rebuild/enrich via
   `scripts/update_testsuite_db.py`). The `network`-marked radio test auto-skips offline.
@@ -284,6 +285,9 @@ Profiled methods include:
 10. **Filter data vs widgets**: `app.local_items` stores **data dicts** (not widget references). Widgets can't be reused after `clear()`+`mount()`. Always rebuild fresh `ListItem` widgets from data when filtering.
 11. **Mode switch state clearing**: `on_radio_set_changed` must clear `_stream_source` and `currently_playing` along with `current_title`. Otherwise the 1s `_refresh_metadata` poll reads stale mpv properties and overwrites "Nothing playing" with garbage.
 12. **M3U load race condition**: `LocalScreen.on_mount` fires `set_timer(0.1, self._load_local)` which scans `$HOME`. When loading an M3U, `on_directory_tree_file_selected` must call `cancel_pending_local_load()` to prevent the timer from overwriting `local_items` with `$HOME` files.
+13. **Playing item tagging**: `play_station` and `play_local` tag the active list item with a `.playing` CSS class via `_tag_playing_item()` / `_tag_playing_item_for_source()`. `action_stop` and `on_radio_set_changed` must call `_clear_playing_tags()` to prevent stale highlights.
+14. **Stream connecting state**: `play_station` and the URL branch of `play_local` set `NowPlaying.connecting = True`. `_refresh_stream_metadata` clears it when ICY metadata arrives. Without this, the connecting state persists and the user sees "⏳ Connecting..." forever.
+15. **LocalScreen default scan path**: `LocalScreen._default_music_dir()` returns `~/Music` when it exists, falls back to `$HOME`. Both `compose_mode_content` and `_load_local` use this method — never hardcode `Path.home()` in LocalScreen.
 
 ## Rules for Modifying Existing Components
 
