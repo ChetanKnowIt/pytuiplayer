@@ -1,50 +1,84 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`main` (build pipeline merged + `v0.2.0` published). Working tree contains the new
-"release cadence" discipline docs/scripts (uncommitted at time of writing; see Next Step).
+`feature/12-ui-polish` (created from `main`). 156 tests pass, ruff clean.
 
 ## Completed This Session
 
-### feature/11-build-pipeline — Build & Distribution (MERGED + RELEASED)
-- Branch `feature/11-build-pipeline` merged to `main` (`--no-ff`), pushed.
-- Tagged `v0.2.0` → `.github/workflows/build.yml` built wheel + sdist + per-OS one-file
-  binaries and **published** the GitHub release (4 artifacts): `pytuiplayer` (Linux, 113 MB),
-  `pytuiplayer.exe` (Windows, 15 MB), `pytuiplayer-0.2.0-py3-none-any.whl` (338 KB),
-  `pytuiplayer-0.2.0.tar.gz` (333 KB).
-- Release URL: https://github.com/ChetanKnowIt/pytuiplayer/releases/tag/v0.2.0
-- `mpv` kept **independent** of the package (user decision): binaries/wheel require `mpv` on
-  the target host (python-mpv loads system `libmpv` at runtime). Documented in README/AGENTS.
+### Architecture Review (complete)
+- Read and analyzed all source modules: `tui_app.py` (now ~800 lines), `widgets.py` (216 lines),
+  `screens.py` (272 lines), `playlist.py` (399 lines), `metadata.py` (109 lines), `volume.py`
+  (72 lines), `history.py` (81 lines), `exporter.py` (70 lines), `mpv_player.py` (100 lines),
+  `station_player.py` (39 lines), `utils.py` (48 lines), `types.py` (21 lines), constants.py (18 lines).
+- Read and analyzed all 18 test files in `src/tests/` (156 tests total after adding 9 new).
+- Read SKILL.md, AGENTS.md, ROADMAP.md, CSS, profiling, logging config.
+- Verified baseline: `uv run ruff check .` → All checks passed!; `uv run pytest -q` → 156 passed.
 
-### Release Cadence discipline (NEW, this turn)
-Decision: **cut a release every 3 merged feature branches** (rolling features into the package
-on a fixed cadence). Codified in:
-- `ROADMAP.md` — new "Release Cadence Policy (discipline)" section (rule, versioning
-  `0.x.0` MINOR bumps, scope reaffirmation, feature→release ledger).
-- `AGENTS.md` — "Packaging & Distribution" gains the cadence rule + pointer to the ledger/helper.
-- `SKILL.md` (project skill) — new "Release Cadence (discipline)" section.
-- `docs/RELEASE_CADENCE.md` (new) — authoritative ledger: releases table (v0.1.0 baseline,
-  v0.2.0), running counter (features since last release: 0), and a "how to cut a release" recipe.
-- `scripts/release_cadence.py` (new) — prints merged `feature/*` branch count (soft hint; branches
-  are often deleted post-merge) + the authoritative ledger counter, and whether a release is due.
-  Ruff-clean; verified locally: reports last release v0.2.0, 0/3 since, next v0.3.0 after 3 more.
+### UI Review & Rating (complete)
+- **Overall UI rating: 7.5/10** — solid Winamp retro aesthetic, competent implementation.
+- Documented 10 areas for improvement (seek bar precision, marquee speed, no active track
+  highlighting, default scan path is $HOME, volume bar too small, no button press feedback,
+  no connection status, loading status placement, station index prefix redundancy,
+  missing playlist total time display).
+- Proposed 8 UI polish items for `feature/12-ui-polish` (below).
 
-## Verification
-- `uv run ruff check .` → **All checks passed!** (incl. `scripts/release_cadence.py`)
-- `uv run pytest -q` → **147 passed** (1 radio-integration test skips in CI; 2 benign
-  `DirectoryTree.watch_path` coroutine warnings)
-- `uv run python scripts/release_cadence.py` → correct output (v0.2.0, 0/3, next v0.3.0)
-- CI on main is green; `v0.2.0` release published.
+### feature/12-ui-polish — UI Improvements (MERGED into working tree)
+All 8 planned items implemented + tested (9 new tests in `test_feature_12_ui_polish.py`):
+
+1. **Active playback indicator in lists** — `.playing` / `.not-playing` CSS classes on
+   ListItems; `play_station` and `play_local` tag the active item via `_tag_playing_item()`
+   and `_tag_playing_item_for_source()`. Inactive entries dimmed to `#666`, active ones
+   highlighted in `#ffd24a` (amber). Done in `tui_app.py` + `musicplayer_tui.css`.
+
+2. **Current station marker in radio list** — same mechanism as #1; the active station
+   gets the `.playing` class with amber text. Done.
+
+3. **Faster marquee** — `NowPlaying._tick()` now advances 2 chars/tick when title > 40 chars
+   (was 1 char/tick regardless). Short titles still advance 1 char/tick. Done in `widgets.py`.
+
+4. **Loading/connection state in NowPlaying** — new `connecting` reactive on `NowPlaying`.
+   `play_station` and URL-branch of `play_local` set `connecting=True`; `_refresh_stream_metadata`
+   clears it when ICY metadata arrives. Render shows "⏳ Connecting..." in the stream row.
+   Done in `widgets.py`, `tui_app.py`, `metadata.py`.
+
+5. **Default local scan to ~/Music** — `LocalScreen._default_music_dir()` returns `~/Music`
+   when it exists, falls back to `$HOME`. Both `compose_mode_content` and `_load_local` use it.
+   Done in `screens.py`.
+
+6. **Wider adaptive VolumeIndicator** — CSS changed from fixed `width: 25` to `width: 1fr`
+   with `min-width: 25` and `max-width: 40`. Done in `musicplayer_tui.css`.
+
+7. **Button press visual feedback** — enhanced `:focus` state (green border + bold) and
+   `:hover` state (brighter background). Note: Textual doesn't support `:pressed` pseudo-class,
+   so focus/hover provide the visual feedback. Done in `musicplayer_tui.css`.
+
+8. **Playlist total time display** — `load_local_files` and `load_m3u` now compute total
+   duration from known item durations and update the loading-status bar (e.g.
+   "📂 Loaded 42 tracks (40 with dur — 02:15:30 total)"). Done in `playlist.py`.
+
+### Tests Added (9 new, all passing)
+- `test_default_music_dir_prefers_home_music` — ~/Music exists → returns it
+- `test_default_music_dir_falls_back_to_home` — no ~/Music → returns $HOME
+- `test_marquee_tick_advances_faster_for_long_titles` — 2 chars/tick for long titles
+- `test_marquee_tick_resets_offset_on_new_title` — offset resets on new track
+- `test_volume_indicator_renders_with_flexible_width` — render still valid
+- `test_now_playing_shows_connecting_state` — "⏳ Connecting..." shown
+- `test_now_playing_connecting_clears_on_meta_arrival` — metadata replaces connecting
+- `test_now_playing_connecting_combines_with_stream` — connecting takes priority
+- `test_load_m3u_shows_total_duration` — total duration in loading status
+
+### Testsuite DB Updated
+- Added `test_feature_12_ui_polish.py` to `FILE_DESCRIPTIONS` in `scripts/update_testsuite_db.py`.
 
 ## Architectural decisions
-- Packaging path = tag a `v*` on `main` (let `build.yml` build + publish). Never hand-build/attach.
-- Release cadence = 3 merged features → MINOR bump + tag. The ledger doc (`docs/RELEASE_CADENCE.md`)
-  is authoritative; the script is a git-derived sanity check.
+- Packaging path = tag a `v*` on `main` (let `build.yml` build + publish). Never hand-build.
+- Release cadence = 3 merged features → MINOR bump + tag. Ledger in `docs/RELEASE_CADENCE.md`.
 - `mpv` independent of the package (confirmed scope decision).
+- Architecture is well-structured: thin orchestrator + 6 focused controller modules.
+- Textual CSS doesn't support `:pressed` — used `:focus` + `:hover` for button feedback.
+- `brightness` is not a valid Textual CSS property — removed from button hover.
 
 ## Next Step
-Commit the release-cadence discipline files on `main` (they are docs/scripts only, no behavior
-change) and push. Then resume feature work on fresh branches; when 3 feature branches have merged
+Commit the `feature/12-ui-polish` branch on `main` (docs + code + tests) and push.
+Then resume feature work on fresh branches; when 3 feature branches have merged
 since v0.2.0, run the "how to cut a release" recipe (bump to v0.3.0, tag, publish, update ledger).
-Remaining ROADMAP Low Priority items (#2 favorites, #5 configurable keys, #7 visualizer) are
-unscheduled and untouched.

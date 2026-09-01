@@ -44,6 +44,7 @@ class NowPlaying(Static):
     meta = reactive("")       # stream metadata title
     shuffle = reactive(False)  # shuffle playback mode on/off
     repeat = reactive("off")   # repeat mode: "off" | "one" | "all"
+    connecting = reactive(False)  # True while stream connects, before ICY metadata arrives
 
     MIN_BAR_WIDTH = 20
     MAX_BAR_WIDTH = 160
@@ -53,7 +54,12 @@ class NowPlaying(Static):
         self.set_interval(0.5, self._tick)
 
     def _tick(self) -> None:
-        self._offset = (self._offset + 1) % max(1, len(self.title) + 1)
+        # Advance faster (2 chars) when the title likely overflows its display area,
+        # giving a smoother scroll on long track titles. When the title is short
+        # enough to fit, the offset just wraps harmlessly.
+        title_len = len(self.title or "")
+        step = 2 if title_len > 40 else 1
+        self._offset = (self._offset + step) % max(1, title_len + 1)
         self.refresh()
 
     def on_now_playing_message(self, message: "NowPlayingMessage") -> None:
@@ -132,6 +138,8 @@ class NowPlaying(Static):
 
     def _render_stream_info(self) -> str:
         """Render metadata for live streams (radio)."""
+        if self.connecting:
+            return "⏳ Connecting..."
         if self.meta:
             return f"Now: {self.meta}"
         if self.duration and self.duration > 0:

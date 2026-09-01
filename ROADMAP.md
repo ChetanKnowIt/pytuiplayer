@@ -204,6 +204,34 @@ end users (wheel/sdist + one-file binaries) with CI gates and release automation
 - The legacy `pytuiplayer.spec` is retained only as reference (it is `*.spec`-gitignored
   and does not build cleanly from the repo root); `scripts/build_pyinstaller.py` is canonical.
 
+### feature/12-ui-polish — **DONE** (branch `feature/12-ui-polish`)
+Closes several UI polish items identified during the architecture + UI review. All are
+small, focused changes with tests following the existing FakeMPV + stub pattern.
+
+**UI improvements (8 items):**
+1. Active playback indicator in lists — highlight the current station/local item with
+   the orange (#ff9e00) accent via a `.playing` CSS class on the selected ListItem.
+2. Current station marker in radio list — show `▶ Station Name` for the active station;
+   dim inactive entries (opacity: 0.6). Requires `play_station` to tag the active item.
+3. Faster marquee — increase tick rate when title exceeds available width (e.g. 0.2s
+   when scrolling vs 0.5s static). Currently 1 char per 0.5s is too slow.
+4. Loading / connection state in NowPlaying — show a spinner or "Connecting…" state
+   when a stream is launched but ICY metadata hasn't arrived; show "⏳" transport icon.
+5. Default local scan to `~/Music` — change `LocalScreen.on_mount` to scan
+   `~/Music` (fall back to `$HOME` if the dir doesn't exist) instead of always
+   scanning all of `$HOME`.
+6. Wider adaptive VolumeIndicator — expand beyond 25 chars when terminal width allows
+   (e.g. scale to 40 chars in wide terminals).
+7. Button press visual feedback — add `:pressed` pseudo-class styling to control
+   buttons (darker background / inset border) so key presses feel responsive.
+8. Playlist total time display — show total duration of loaded playlist in the
+   loading-status bar (e.g. "✅ Loaded 42 tracks — 2h 15m").
+
+**Tests required:** each change gets a focused unit test. UI changes verified headlessly
+via `run_test()` + layout probe (see SKILL references/layout_alignment_probe.md).
+
+**Status:** 156 tests pass (147 original + 9 new in `test_feature_12_ui_polish.py`), ruff clean.
+
 ### Low Priority (remaining — unscheduled)
 2. Add station favorites — bookmark frequently played stations
 5. Add configurable keybindings — user-defined bindings

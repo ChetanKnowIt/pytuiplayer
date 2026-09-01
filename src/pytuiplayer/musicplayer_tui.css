@@ -76,7 +76,13 @@ Footer {
 
 #controls Button:focus {
     border: round #39ff14;
+    background: #ffd24a;
+    text-style: bold;
 }
+
+/* Press feedback: Textual handles press state via the Button's built-in
+   rendering (darker background while mouse is down). The :focus state above
+   provides keyboard navigation feedback. */
 
 #controls Button:disabled {
     background: #333;
@@ -91,7 +97,9 @@ Footer {
     padding: 0 1;
     margin: 0 0;
     height: 3;
-    width: 25;
+    width: 1fr;
+    min-width: 25;
+    max-width: 40;
     content-align: center middle;
     text-style: bold;
 }
@@ -177,6 +185,30 @@ ListItem {
 }
 
 ListItem.-selected {
+    background: #ff9e00;
+    color: #0b0b0b;
+    text-style: bold;
+}
+
+/* Currently playing item — dim inactive entries, highlight the active one. */
+#station-list ListItem.not-playing {
+    color: #666;
+}
+#station-list ListItem.playing {
+    color: #ffd24a;
+    text-style: bold;
+}
+#local-list ListItem.not-playing {
+    color: #666;
+}
+#local-list ListItem.playing {
+    color: #ffd24a;
+    text-style: bold;
+}
+
+/* If the playing item is also selected, keep the selected style priority. */
+#station-list ListItem.playing.-selected,
+#local-list ListItem.playing.-selected {
     background: #ff9e00;
     color: #0b0b0b;
     text-style: bold;
