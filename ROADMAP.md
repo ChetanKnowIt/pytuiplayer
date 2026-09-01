@@ -232,10 +232,37 @@ via `run_test()` + layout probe (see SKILL references/layout_alignment_probe.md)
 
 **Status:** 156 tests pass (147 original + 9 new in `test_feature_12_ui_polish.py`), ruff clean.
 
-### Low Priority (remaining — unscheduled)
-2. Add station favorites — bookmark frequently played stations
-5. Add configurable keybindings — user-defined bindings
-7. Add album art / visualizer — ASCII art from audio
+### Low Priority (remaining — unscheduled, in priority order)
+
+**Next up:**
+
+### feature/13-audio-visualizer — **TODO** (branch to be created)
+Add real-time audio visualizer — render amplitude/frequency data as ASCII art in the TUI.
+Modes: waveform (time-domain), spectrum (frequency-domain via FFT), VU meter.
+
+**Requirements:**
+- New `visualizer.py` module — `AudioVisualizer` controller that polls mpv for audio samples
+  (via `mpv.player.audio_samples()` or property API) and renders ASCII visualizations.
+- NowPlaying widget gains a `visualizer` mode toggle — pressing `v` cycles through:
+  - Off (default LED display)
+  - Waveform (scrolling amplitude bars)
+  - Spectrum (FFT frequency bars)
+  - VU meter (stereo level bars)
+- Use `numpy` for FFT if available, with a pure-Python fallback (DFT on small windows).
+- Render as a compact ASCII grid (e.g. 40x8 chars) in place of the seek bar row.
+- Color-coded bars: green (low), amber (mid), red (peak).
+
+**Tests:** ~8 tests — mock audio samples, verify each mode renders correct ASCII output, verify toggle cycling, verify graceful degradation without numpy.
+
+**New dependency:** `numpy` (optional — fallback works without it).
+
+---
+
+**Later:**
+
+7. ~~Add album art / visualizer~~ → folded into `feature/13-audio-visualizer`
+5. Add configurable keybindings — user-defined bindings (config file + editor screen)
+2. Add station favorites — bookmark frequently played stations (JSON storage + heart icon)
 
 ---
 

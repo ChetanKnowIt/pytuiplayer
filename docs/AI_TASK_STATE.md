@@ -79,6 +79,14 @@ All 8 planned items implemented + tested (9 new tests in `test_feature_12_ui_pol
 - `brightness` is not a valid Textual CSS property — removed from button hover.
 
 ## Next Step
-Commit the `feature/12-ui-polish` branch on `main` (docs + code + tests) and push.
-Then resume feature work on fresh branches; when 3 feature branches have merged
-since v0.2.0, run the "how to cut a release" recipe (bump to v0.3.0, tag, publish, update ledger).
+Create `feature/13-audio-visualizer` branch and implement the visualizer:
+- New `visualizer.py` module with `AudioVisualizer` controller
+- NowPlaying gains `v` keybinding to cycle modes (Off → Waveform → Spectrum → VU Meter)
+- Polls mpv for audio samples, renders ASCII art
+- Tests with mock audio data
+
+After that: feature/15 (configurable keybindings), then feature/14 (station favorites).
+
+Remaining ROADMAP Low Priority items (reordered):
+- **Next:** feature/13-audio-visualizer (audio visualization)
+- **Later:** #5 configurable keybindings, #2 station favorites
