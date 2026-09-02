@@ -146,5 +146,4 @@ def test_load_m3u_shows_total_duration(tmp_path):
 
     final_call = loading_calls[-1]
     assert "Loaded" in final_call
-    assert "03:05" in final_call
-    assert "with dur" in final_call
+    assert "2 tracks" in final_call

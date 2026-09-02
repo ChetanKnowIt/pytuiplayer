@@ -6,6 +6,7 @@ Handles loading local MP3 files, M3U playlists, and prev/next navigation.
 import asyncio
 import os
 import random
+import time
 from collections.abc import AsyncIterator
 from functools import partial
 from pathlib import Path
@@ -149,14 +150,14 @@ class PlaylistLoader:
 
     @profile_async
     async def load_m3u(self, path: Path):
-        """Load a local M3U playlist into #local-list in batches."""
+        """Load a local M3U playlist into #local-list with cache integration."""
         local_list: ListView = self.app.query_one("#local-list", ListView)
         local_list.clear()
         self.app.local_items = {}
 
         base_dir = path.parent
         max_items = self.app.max_playlist_items or float("inf")
-        batch_size = self.app.playlist_batch_size
+        batch_size = min(50, self.app.playlist_batch_size)
 
         try:
             loading = self.app.query_one("#loading-status", Static)
@@ -164,97 +165,87 @@ class PlaylistLoader:
         except Exception:
             loading = None
 
-        async def line_generator() -> AsyncIterator[str]:
-            if aiofiles:
-                async with aiofiles.open(
-                    path, mode="r", encoding="utf-8", errors="replace"
-                ) as f:
-                    async for raw in f:
-                        line = raw.strip()
-                        if line:
-                            yield line
-            else:
-                with open(path, encoding="utf-8", errors="replace") as f:
-                    for raw in f:
-                        line = raw.strip()
-                        if line:
-                            yield line
-
-        batch: list = []
+        # Parse all lines to data
+        items_data = []
         pending_meta: str | None = None
         pending_dur: int | None = None
-        count = 0
 
-        async for line in line_generator():
-            if line.startswith("#EXTINF"):
-                pending_dur, pending_meta = parse_extinf(line)
-                continue
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    if line.startswith("#EXTINF"):
+                        pending_dur, pending_meta = parse_extinf(line)
+                    continue
 
-            if line.startswith("#"):
-                continue
+                source = resolve_source(base_dir, line)
+                label = pending_meta or Path(source).name
+                duration = pending_dur
 
-            source = resolve_source(base_dir, line)
-            label = pending_meta or Path(source).name
-            duration = pending_dur
+                pending_meta = None
+                pending_dur = None
 
-            pending_meta = None
-            pending_dur = None
+                items_data.append((source, label, duration))
+                if len(items_data) >= max_items:
+                    break
+
+        # Store data dicts and batch-insert to cache
+        cache_entries = []
+        for source, label, duration in items_data:
+            item_data = ItemData(
+                source=source, title=label, duration=duration, meta=label
+            )
+            self.app.local_items[source] = item_data
+            cache_entries.append({
+                "path": source,
+                "duration": duration,
+                "title": label,
+                "indexed_at": time.time(),
+            })
+
+        # Batch-insert to cache (single transaction, fast)
+        if cache_entries and hasattr(self.app, 'metadata_index'):
+            self.app.metadata_index.store_batch(cache_entries)
+
+        # Mount widgets in batches
+        batch = []
+        for idx, (source, label, duration) in enumerate(items_data):
+            # Check cache for duration if not in EXTINF
+            if duration is None and hasattr(self.app, 'metadata_index'):
+                cached = self.app.metadata_index.get_track(source)
+                if cached and cached.get("duration"):
+                    duration = cached["duration"]
+                    self.app.local_items[source]["duration"] = duration
 
             duration_str = fmt_mmss(duration) if duration is not None else ""
             display = f"{label:<40} {duration_str}"
             item = ListItem(Label(display))
-            item.data = ItemData(
-                source=source,
-                title=label,
-                duration=duration,
-                meta=label,
-            )
+            item.data = self.app.local_items[source]
             item._meta_label = label
-
             batch.append(item)
-            # Store the data dict (not the widget) so _filter_local_list can rebuild
-            # fresh ListItems from it. Widgets can't be reused after clear()+mount().
-            self.app.local_items[source] = item.data
-            count += 1
-
-            if count >= max_items:
-                break
 
             if len(batch) >= batch_size:
                 await local_list.mount(*batch)
                 batch.clear()
                 if loading:
-                    loading.update(f"📂 Loading playlist... ({count} items)")
-                if count % 100 == 0:
-                    await asyncio.sleep(0)
+                    loading.update(f"📂 Loading... ({idx + 1}/{len(items_data)})")
+                await asyncio.sleep(0)
 
-        await local_list.mount(*batch)
-        batch.clear()
-
-        if self.app.fetch_duration_eager:
-            asyncio.create_task(self._populate_missing_durations(local_list))
+        if batch:
+            await local_list.mount(*batch)
+            batch.clear()
 
         if loading:
-            loading.update(f"✅ Loaded {count} tracks")
-            # Show total playlist duration where known
-            total_secs = 0
-            known_dur = 0
-            for data in self.app.local_items.values():
-                dur = data.get("duration")
-                if isinstance(dur, (int, float)) and dur > 0:
-                    total_secs += dur
-                    known_dur += 1
-            if count > 0:
-                if known_dur > 0:
-                    total_str = fmt_mmss(total_secs)
-                    loading.update(
-                        f"📂 Loaded {count} tracks "
-                        f"({known_dur} with dur — {total_str} total)"
-                    )
-                else:
-                    loading.update(
-                        f"✅ Loaded {count} tracks (durations loading...)"
-                    )
+            loading.update(f"✅ Loaded {len(items_data)} tracks")
+
+        # Spawn duration workers only for items without duration
+        for idx, item_data in enumerate(self.app.local_items.values()):
+            if item_data.get("duration") is None:
+                self.app.run_worker(
+                    partial(self.fetch_duration, item_data),
+                    name=f"fetch_duration:{idx}",
+                    exit_on_error=False,
+                )
 
     async def _populate_missing_durations(self, list_view: ListView):
         """Walk already-mounted items and fill missing durations from file tags."""

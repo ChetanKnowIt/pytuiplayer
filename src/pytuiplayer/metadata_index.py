@@ -146,12 +146,19 @@ class MetadataIndex:
         except (ValueError, IndexError):
             return None
 
+    def store_batch(self, metadata_list: list[dict]):
+        """Store multiple metadata entries in a single transaction (fast).
+        
+        This is the public API for batch inserts.
+        """
+        self._store_batch(metadata_list)
+
     def _store_batch(self, metadata_list: list[dict]):
         """Store multiple metadata entries in a single transaction (fast)."""
         data = [
             (
-                m["path"], m["duration"], m["artist"], m["album"],
-                m["title"], m["track"], m["year"], m["genre"], m["indexed_at"],
+                m.get("path"), m.get("duration"), m.get("artist"), m.get("album"),
+                m.get("title"), m.get("track"), m.get("year"), m.get("genre"), m.get("indexed_at"),
             )
             for m in metadata_list
         ]
@@ -174,15 +181,15 @@ class MetadataIndex:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                metadata["path"],
-                metadata["duration"],
-                metadata["artist"],
-                metadata["album"],
-                metadata["title"],
-                metadata["track"],
-                metadata["year"],
-                metadata["genre"],
-                metadata["indexed_at"],
+                metadata.get("path"),
+                metadata.get("duration"),
+                metadata.get("artist"),
+                metadata.get("album"),
+                metadata.get("title"),
+                metadata.get("track"),
+                metadata.get("year"),
+                metadata.get("genre"),
+                metadata.get("indexed_at"),
             ),
         )
         self.conn.commit()

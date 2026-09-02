@@ -27,11 +27,13 @@ from pytuiplayer.constants import (
     DEFAULT_PLAYLIST_BATCH_SIZE,
     ICON_ERR,
     MAX_PLAYLIST_ITEMS,
+    METADATA_DB_PATH,
 )
 from pytuiplayer.exporter import PlaylistExporter
 from pytuiplayer.history import HistoryTracker
 from pytuiplayer.logging_config import get_logger, setup_logging
 from pytuiplayer.metadata import MetadataPoller
+from pytuiplayer.metadata_index import MetadataIndex
 from pytuiplayer.mpv_player import MPVPlayer
 from pytuiplayer.playlist import PlaylistLoader, PlaylistNavigator
 from pytuiplayer.profiling import profile, profile_async
@@ -105,6 +107,10 @@ class MusicPlayerApp(App):
         self._current_local_source = None
         self._local_meta_source = None
 
+        # Metadata cache (SQLite-backed)
+        METADATA_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.metadata_index = MetadataIndex(METADATA_DB_PATH)
+
         # Controllers
         self.volume_controller = VolumeController(self)
         self.metadata_poller = MetadataPoller(self)
@@ -118,6 +124,11 @@ class MusicPlayerApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Footer()
+
+    async def on_cleanup(self) -> None:
+        """Close database connections on app exit."""
+        if hasattr(self, 'metadata_index'):
+            self.metadata_index.close()
 
     @profile_async
     async def on_mount(self) -> None:
