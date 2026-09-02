@@ -211,39 +211,38 @@ class PlaylistLoader:
                 if len(items_data) >= max_items:
                     break
 
-        # Store data dicts and batch-insert to cache
-        cache_entries = []
-        for source, label, duration in items_data:
+        # Build widgets with cache-aware logic
+        batch = []
+        cached_count = 0
+        needs_worker_count = 0
+
+        for idx, (source, label, duration) in enumerate(items_data):
             item_data = ItemData(
                 source=source, title=label, duration=duration, meta=label
             )
-            self.app.local_items[source] = item_data
-            cache_entries.append({
-                "path": source,
-                "duration": duration,
-                "title": label,
-                "indexed_at": time.time(),
-            })
 
-        # Batch-insert to cache (single transaction, fast)
-        if cache_entries and hasattr(self.app, 'metadata_index'):
-            self.app.metadata_index.store_batch(cache_entries)
-
-        # Mount widgets in batches
-        batch = []
-        for idx, (source, label, duration) in enumerate(items_data):
-            # Check cache for duration if not in EXTINF
+            # Check cache for existing metadata (only if we don't have duration from EXTINF)
             if duration is None and hasattr(self.app, 'metadata_index'):
                 cached = self.app.metadata_index.get_track(source)
-                if cached and cached.get("duration"):
-                    duration = cached["duration"]
-                    self.app.local_items[source]["duration"] = duration
+                if cached:
+                    # Use cached duration if available
+                    if cached.get("duration"):
+                        item_data["duration"] = cached["duration"]
+                        item_data["title"] = cached.get("title") or label
+                        item_data["meta"] = cached.get("title") or label
+                        cached_count += 1
 
-            duration_str = fmt_mmss(duration) if duration is not None else ""
-            display = f"{label:<40} {duration_str}"
+            # Track if we need to spawn a worker for this item
+            if item_data.get("duration") is None:
+                needs_worker_count += 1
+
+            self.app.local_items[source] = item_data
+
+            duration_str = fmt_mmss(item_data.get("duration")) if item_data.get("duration") is not None else ""
+            display = f"{item_data['title']:<40} {duration_str}"
             item = ListItem(Label(display))
-            item.data = self.app.local_items[source]
-            item._meta_label = label
+            item.data = item_data
+            item._meta_label = item_data['title']
             batch.append(item)
 
             if len(batch) >= batch_size:
@@ -258,7 +257,10 @@ class PlaylistLoader:
             batch.clear()
 
         if loading:
-            loading.update(f"✅ Loaded {len(items_data)} tracks")
+            if cached_count > 0:
+                loading.update(f"✅ Loaded {len(items_data)} tracks ({cached_count} cached)")
+            else:
+                loading.update(f"✅ Loaded {len(items_data)} tracks")
 
         # Spawn duration workers only for items without duration
         for idx, item_data in enumerate(self.app.local_items.values()):
