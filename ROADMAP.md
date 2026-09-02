@@ -225,25 +225,38 @@ UI polish identified during the architecture + UI review. 8 items, 9 new tests.
 
 **Next up:**
 
-### feature/13-audio-visualizer — **TODO** (branch to be created)
+### feature/13-audio-visualizer — **PAUSED** (branch `feature/13-audio-visualizer-v2`)
 Add real-time audio visualizer — render amplitude/frequency data as ASCII art in the TUI.
 Modes: waveform (time-domain), spectrum (frequency-domain via FFT), VU meter.
 
-**Requirements:**
-- New `visualizer.py` module — `AudioVisualizer` controller that polls mpv for audio samples
-  (via `mpv.player.audio_samples()` or property API) and renders ASCII visualizations.
-- NowPlaying widget gains a `visualizer` mode toggle — pressing `v` cycles through:
-  - Off (default LED display)
-  - Waveform (scrolling amplitude bars)
-  - Spectrum (FFT frequency bars)
-  - VU meter (stereo level bars)
-- Use `numpy` for FFT if available, with a pure-Python fallback (DFT on small windows).
-- Render as a compact ASCII grid (e.g. 40x8 chars) in place of the seek bar row.
-- Color-coded bars: green (low), amber (mid), red (peak).
+**Status:** Paused after implementing metadata cache foundation. Visualizer itself not yet started.
 
-**Tests:** ~8 tests — mock audio samples, verify each mode renders correct ASCII output, verify toggle cycling, verify graceful degradation without numpy.
+**New Module:**
+- `src/pytuiplayer/metadata_index.py` — MetadataIndex class with SQLite cache + FTS5 full-text search
 
-**New dependency:** `numpy` (optional — fallback works without it).
+**Changes:**
+- `constants.py` — Added METADATA_DB_PATH (XDG-compliant: `~/.local/share/pytuiplayer/metadata.db`)
+- `tui_app.py` — Initialize MetadataIndex in __init__, close on cleanup, update NowPlaying with real metadata
+- `playlist.py` — load_m3u() and load_local_files() are cache-aware, fetch_duration() writes to cache
+- `widgets.py` — _khz/_kbps now show real values per track
+
+**Tests:** 32 tests in `test_metadata_index.py` (cache init, schema, persistence, FTS search, staleness, migration)
+
+**Performance:**
+- First scan: ~1 min for 2000 files (mutagen, 2ms per file)
+- Subsequent loads: instant (SQLite query)
+- Search: FTS5 full-text across artist/album/title/genre
+
+**Known Issues (Backlog):**
+1. M3U first-load slow (files without #EXTINF have unknown durations initially)
+2. Search widget janky (UI locks on each keystroke, needs debouncing + async search)
+3. No FTS integration tests for search widget
+
+**Next Steps:**
+1. Add tests for FTS search integration
+2. Fix search widget (debounce + async FTS query)
+3. Wire FTS search into LocalScreen search widget
+4. Implement actual audio visualizer (waveform/spectrum/VU meter)
 
 ---
 
