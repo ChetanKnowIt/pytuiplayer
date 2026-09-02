@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS tracks (
     track INTEGER,
     year TEXT,
     genre TEXT,
+    bitrate INTEGER,
+    sample_rate INTEGER,
+    channels INTEGER,
+    encoder TEXT,
     indexed_at REAL
 );
 
@@ -45,7 +49,28 @@ class MetadataIndex:
         self.db_path = db_path
         self.conn = sqlite3.connect(str(db_path))
         self.conn.executescript(SCHEMA)
+        self._migrate_schema()
         self.conn.commit()
+
+    def _migrate_schema(self):
+        """Add missing columns to existing databases (forward-compatible)."""
+        # Check if bitrate column exists
+        cursor = self.conn.execute("PRAGMA table_info(tracks)")
+        columns = {row[1] for row in cursor.fetchall()}
+        
+        migrations = [
+            ("bitrate", "INTEGER"),
+            ("sample_rate", "INTEGER"),
+            ("channels", "INTEGER"),
+            ("encoder", "TEXT"),
+        ]
+        
+        for col_name, col_type in migrations:
+            if col_name not in columns:
+                try:
+                    self.conn.execute(f"ALTER TABLE tracks ADD COLUMN {col_name} {col_type}")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists or other error
 
     def close(self):
         """Close the database connection."""
@@ -101,7 +126,8 @@ class MetadataIndex:
     def _probe_file(self, path: Path) -> dict | None:
         """Probe a single file for metadata using mutagen.
 
-        Returns dict with duration, artist, album, title, track, year, genre.
+        Returns dict with duration, artist, album, title, track, year, genre,
+        bitrate, sample_rate, channels, encoder.
         """
         try:
             audio = MutagenFile(str(path))
@@ -120,6 +146,10 @@ class MetadataIndex:
                 "track": self._parse_track(self._get_tag(tags, ["tracknumber", "TRCK"])),
                 "year": self._get_tag(tags, ["date", "TDRC", "year"]),
                 "genre": self._get_tag(tags, ["genre", "TCON"]),
+                "bitrate": getattr(info, "bitrate", None),
+                "sample_rate": getattr(info, "sample_rate", None),
+                "channels": getattr(info, "channels", None),
+                "encoder": getattr(info, "encoder_info", None),
                 "indexed_at": time.time(),
             }
         except Exception as e:
@@ -158,15 +188,18 @@ class MetadataIndex:
         data = [
             (
                 m.get("path"), m.get("duration"), m.get("artist"), m.get("album"),
-                m.get("title"), m.get("track"), m.get("year"), m.get("genre"), m.get("indexed_at"),
+                m.get("title"), m.get("track"), m.get("year"), m.get("genre"),
+                m.get("bitrate"), m.get("sample_rate"), m.get("channels"), m.get("encoder"),
+                m.get("indexed_at"),
             )
             for m in metadata_list
         ]
         self.conn.executemany(
             """
             INSERT OR REPLACE INTO tracks
-            (path, duration, artist, album, title, track, year, genre, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (path, duration, artist, album, title, track, year, genre,
+             bitrate, sample_rate, channels, encoder, indexed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             data,
         )
@@ -177,8 +210,9 @@ class MetadataIndex:
         self.conn.execute(
             """
             INSERT OR REPLACE INTO tracks
-            (path, duration, artist, album, title, track, year, genre, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (path, duration, artist, album, title, track, year, genre,
+             bitrate, sample_rate, channels, encoder, indexed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 metadata.get("path"),
@@ -189,6 +223,10 @@ class MetadataIndex:
                 metadata.get("track"),
                 metadata.get("year"),
                 metadata.get("genre"),
+                metadata.get("bitrate"),
+                metadata.get("sample_rate"),
+                metadata.get("channels"),
+                metadata.get("encoder"),
                 metadata.get("indexed_at"),
             ),
         )
@@ -202,22 +240,26 @@ class MetadataIndex:
     def get_all_tracks(self) -> list[dict]:
         """Get all indexed tracks."""
         cursor = self.conn.execute(
-            "SELECT path, duration, artist, album, title, track, year, genre "
+            "SELECT path, duration, artist, album, title, track, year, genre, "
+            "bitrate, sample_rate, channels, encoder "
             "FROM tracks ORDER BY artist, album, track"
         )
-        columns = ["path", "duration", "artist", "album", "title", "track", "year", "genre"]
+        columns = ["path", "duration", "artist", "album", "title", "track", "year", "genre",
+                   "bitrate", "sample_rate", "channels", "encoder"]
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
     def get_track(self, path: str) -> dict | None:
         """Get metadata for a specific track."""
         cursor = self.conn.execute(
-            "SELECT path, duration, artist, album, title, track, year, genre "
+            "SELECT path, duration, artist, album, title, track, year, genre, "
+            "bitrate, sample_rate, channels, encoder "
             "FROM tracks WHERE path = ?",
             (path,),
         )
         row = cursor.fetchone()
         if row:
-            columns = ["path", "duration", "artist", "album", "title", "track", "year", "genre"]
+            columns = ["path", "duration", "artist", "album", "title", "track", "year", "genre",
+                       "bitrate", "sample_rate", "channels", "encoder"]
             return dict(zip(columns, row))
         return None
 

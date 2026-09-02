@@ -38,8 +38,8 @@ class NowPlaying(Static):
     _offset = reactive(0)
     _position = reactive(1)   # track position in playlist (1-based)
     _total = reactive(0)      # total tracks in playlist
-    _khz = reactive("44.1")   # sample rate display
-    _kbps = reactive("320")   # bitrate display
+    _khz = reactive("44.1")   # sample rate display (kHz)
+    _kbps = reactive("320")   # bitrate display (kbps)
     stream = reactive(False)  # True for live streams (radio) — show metadata, not seek bar
     meta = reactive("")       # stream metadata title
     shuffle = reactive(False)  # shuffle playback mode on/off

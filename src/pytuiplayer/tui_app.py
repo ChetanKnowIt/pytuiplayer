@@ -802,6 +802,20 @@ class MusicPlayerApp(App):
             self.update_now_playing(title, "Local File", "▶")
         except Exception:
             logger.debug("update_now_playing failed", exc_info=True)
+
+        # Update NowPlaying with real metadata from cache
+        if hasattr(self, 'metadata_index'):
+            try:
+                cached = self.metadata_index.get_track(str(source_path or source_str))
+                if cached:
+                    now = self.query_one(NowPlaying)
+                    if cached.get("sample_rate"):
+                        now._khz = f"{cached['sample_rate'] / 1000:.1f}"
+                    if cached.get("bitrate"):
+                        now._kbps = str(cached["bitrate"] // 1000)
+            except Exception:
+                logger.debug("Failed to update NowPlaying metadata", exc_info=True)
+
         # Track recently-played item (local file).
         try:
             self.history_tracker.record("local", title, source_path or source_str)
