@@ -13,10 +13,11 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/pytuiplayer/tui_app.py` | Main App (thin orchestrator — routes events to controllers) |
 | `src/pytuiplayer/volume.py` | VolumeController — volume up/down/mute |
 | `src/pytuiplayer/metadata.py` | MetadataPoller — stream/file metadata polling |
+| `src/pytuiplayer/metadata_index.py` | MetadataIndex — SQLite cache with FTS5 full-text search |
 | `src/pytuiplayer/playlist.py` | PlaylistLoader + PlaylistNavigator — M3U/local loading + prev/next |
 | `src/pytuiplayer/widgets.py` | NowPlaying, NowPlayingMessage, VolumeIndicator widgets |
 | `src/pytuiplayer/screens.py` | ModeScreen, RadioScreen, LocalScreen |
-| `src/pytuiplayer/constants.py` | MAX_PLAYLIST_ITEMS, ICON_OK, ICON_ERR |
+| `src/pytuiplayer/constants.py` | MAX_PLAYLIST_ITEMS, ICON_OK, ICON_ERR, METADATA_DB_PATH |
 | `src/pytuiplayer/utils.py` | Pure helpers: parse_extinf, resolve_source, fmt_mmss |
 | `src/pytuiplayer/types.py` | ItemData TypedDict |
 | `src/pytuiplayer/mpv_player.py` | Thin wrapper around `python-mpv` |
@@ -33,6 +34,7 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/tests/test_backlog_coverage.py` | ROADMAP Test Backlog coverage (22 tests) |
 | `src/tests/test_feature_02_design_flows.py` | feature/02 acceptance tests (6 tests) |
 | `src/tests/test_feature_12_ui_polish.py` | feature/12 UI polish tests (marquee, connecting state, ~/Music default, total duration) |
+| `src/tests/test_metadata_index.py` | feature/13 metadata index tests (cache, FTS search, staleness, migration) |
 | `src/tests/test_tui_app.py` | App actions, loaders, visibility, regressions (21 tests) |
 | `scripts/` | Dev scripts and manual test scripts |
 | `scripts/update_testsuite_db.py` | Rebuild/enrich `testsuite.db` (files + backlog mirror) |
@@ -153,6 +155,13 @@ No runtime database — the app is file-based:
 - Radio: JSON station files (`stations.json`), loaded via `anyio.open_file` async I/O
 - Local: `load_local_files()` iterates directory for `.mp3`, creates `ListItem` with `ItemData(source=Path, title=str, duration=None)`
 - M3U: `load_m3u()` parses `#EXTINF` metadata, resolves relative paths, batched mounting (200/batch, max 2000 via `MAX_PLAYLIST_ITEMS`), emits `ItemData(source, title, duration, meta)`
+
+**Metadata Cache (SQLite):**
+- `MetadataIndex` at `~/.local/share/pytuiplayer/metadata.db` for fast re-loads
+- Schema: path, duration, artist, album, title, track, year, genre, bitrate, sample_rate, channels, encoder, file_mtime, indexed_at
+- FTS5 full-text search across artist/album/title/genre
+- Mutagen for metadata extraction (2ms per file)
+- Schema migration for forward-compatible upgrades
 
 Note: the test suite maintains a *generated* SQLite inventory at the repo root
 (`testsuite.db`) for tracking tests/backlog/runs. It is gitignored and refreshed on
