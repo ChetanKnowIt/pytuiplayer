@@ -50,13 +50,38 @@ class MetadataIndex:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self.conn = sqlite3.connect(str(db_path))
-        self.conn.executescript(SCHEMA)
-        self._migrate_schema()
+        
+        # Check if table exists
+        cursor = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='tracks'"
+        )
+        table_exists = cursor.fetchone() is not None
+        
+        if table_exists:
+            # Table exists with potentially old schema - migrate
+            self._migrate_schema()
+        else:
+            # Create fresh schema
+            self.conn.executescript(SCHEMA)
+        
         self.conn.commit()
 
     def _migrate_schema(self):
-        """Add missing columns to existing databases (forward-compatible)."""
-        # Check if bitrate column exists
+        """Add missing columns to existing databases (forward-compatible).
+        
+        Handles migration from old schema versions by adding new columns
+        if they don't already exist.
+        """
+        # Check if table exists
+        cursor = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='tracks'"
+        )
+        if not cursor.fetchone():
+            # Table doesn't exist, create it with full schema
+            self.conn.executescript(SCHEMA)
+            return
+
+        # Table exists, check for missing columns
         cursor = self.conn.execute("PRAGMA table_info(tracks)")
         columns = {row[1] for row in cursor.fetchall()}
         
@@ -66,6 +91,13 @@ class MetadataIndex:
             ("channels", "INTEGER"),
             ("encoder", "TEXT"),
             ("file_mtime", "REAL"),
+            ("artist", "TEXT"),
+            ("album", "TEXT"),
+            ("title", "TEXT"),
+            ("track", "INTEGER"),
+            ("year", "TEXT"),
+            ("genre", "TEXT"),
+            ("indexed_at", "REAL"),
         ]
         
         for col_name, col_type in migrations:

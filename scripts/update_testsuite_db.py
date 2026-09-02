@@ -63,6 +63,8 @@ FILE_DESCRIPTIONS = {
         "feature/10: playlist export to EXTINF M3U (PlaylistExporter + e binding).",
     "src/tests/test_feature_12_ui_polish.py":
         "feature/12: UI polish (~/Music scan, faster marquee, flexible volume, button pressed).",
+    "src/tests/test_metadata_index.py":
+        "feature/13: metadata index (SQLite cache, mutagen probing, staleness detection).",
 }
 
 # ---------------------------------------------------------------------------
@@ -350,8 +352,58 @@ BACKLOG = [
      "'e' action exports to default path", "done",
      "Low Priority #6"),
     ("test_exporter_instantiated_on_app", "unit",
-     "App instantiates a PlaylistExporter", "done",
-     "Low Priority #6"),
+     "App instantiates a PlaylistExporter", "done", "Low Priority #6"),
+    # feature/13 — metadata index (SQLite cache for fast playlist loading)
+    ("test_creates_database", "unit",
+     "Database file is created on init", "done", "feature/13"),
+    ("test_schema_has_required_columns", "unit",
+     "Schema includes all required columns", "done", "feature/13"),
+    ("test_primary_key_is_path", "unit",
+     "Path is the primary key", "done", "feature/13"),
+    ("test_indexes_exist", "unit",
+     "Required indexes exist", "done", "feature/13"),
+    ("test_close_connection", "unit",
+     "Close method works without error", "done", "feature/13"),
+    ("test_persistence_across_reopen", "unit",
+     "Data persists after close and reopen", "done", "feature/13"),
+    ("test_store_batch", "unit",
+     "Batch insert multiple tracks", "done", "feature/13"),
+    ("test_store_track", "unit",
+     "Store single track", "done", "feature/13"),
+    ("test_get_track_returns_none_for_missing", "unit",
+     "Return None for non-existent track", "done", "feature/13"),
+    ("test_get_all_tracks", "unit",
+     "Get all tracks", "done", "feature/13"),
+    ("test_update_existing_track", "unit",
+     "Update existing track (UPSERT)", "done", "feature/13"),
+    ("test_get_total_duration", "unit",
+     "Get total duration of all tracks", "done", "feature/13"),
+    ("test_get_total_duration_with_none", "unit",
+     "Total duration handles None values", "done", "feature/13"),
+    ("test_get_track_count", "unit",
+     "Get total track count", "done", "feature/13"),
+    ("test_get_indexed_paths", "unit",
+     "Get set of indexed paths", "done", "feature/13"),
+    ("test_store_track_with_minimal_data", "unit",
+     "Store track with only path and duration", "done", "feature/13"),
+    ("test_find_stale_files_new_file", "unit",
+     "New file is stale", "done", "feature/13"),
+    ("test_find_stale_files_modified_file", "unit",
+     "Modified file is stale", "done", "feature/13"),
+    ("test_find_stale_files_unchanged_file", "unit",
+     "Unchanged file is not stale", "done", "feature/13"),
+    ("test_find_stale_files_empty_list", "unit",
+     "Empty file list returns empty stale list", "done", "feature/13"),
+    ("test_remove_tracks", "unit",
+     "Remove tracks from cache", "done", "feature/13"),
+    ("test_remove_tracks_empty_set", "unit",
+     "Remove empty set is a no-op", "done", "feature/13"),
+    ("test_scan_library_incremental", "unit",
+     "Scan library only indexes new files on subsequent scans", "done", "feature/13"),
+    ("test_migrate_adds_missing_columns", "unit",
+     "Migration adds missing columns to existing databases", "done", "feature/13"),
+    ("test_migrate_is_idempotent", "unit",
+     "Running migration multiple times is safe", "done", "feature/13"),
 ]
 
 
@@ -376,7 +428,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[update] refreshed {len(discovered)} test module file rows")
 
         # 2) Sync backlog mirror.
-        if args.reset_backlog:
+        if args.reset-backlog:
             conn.execute("DELETE FROM backlog")
         for name, kind, desc, status, source in BACKLOG:
             upsert_backlog(conn, name, kind, desc, status, source)
