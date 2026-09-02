@@ -529,6 +529,111 @@ class TestCacheStaleness:
         index._probe_file = original_probe
 
 
+class TestFTSSearch:
+    """FTS5 full-text search across metadata."""
+
+    def _populate_index(self, index):
+        """Populate index with test tracks."""
+        tracks = [
+            {
+                "path": "/music/sia/alive.mp3",
+                "duration": 263.94,
+                "artist": "Sia",
+                "album": "This Is Acting",
+                "title": "Alive",
+                "track": 2,
+                "year": "2016",
+                "genre": "Pop",
+                "bitrate": 320000,
+                "sample_rate": 44100,
+                "channels": 2,
+                "encoder": "LAME 3.99",
+                "file_mtime": 1234567890.0,
+                "indexed_at": time.time(),
+            },
+            {
+                "path": "/music/sia/chandelier.mp3",
+                "duration": 216.0,
+                "artist": "Sia",
+                "album": "1000 Forms of Fear",
+                "title": "Chandelier",
+                "track": 1,
+                "year": "2014",
+                "genre": "Pop",
+                "bitrate": 320000,
+                "sample_rate": 44100,
+                "channels": 2,
+                "encoder": "LAME 3.99",
+                "file_mtime": 1234567891.0,
+                "indexed_at": time.time(),
+            },
+            {
+                "path": "/music/queen/bohemian.mp3",
+                "duration": 354.0,
+                "artist": "Queen",
+                "album": "A Night at the Opera",
+                "title": "Bohemian Rhapsody",
+                "track": 1,
+                "year": "1975",
+                "genre": "Rock",
+                "bitrate": 320000,
+                "sample_rate": 44100,
+                "channels": 2,
+                "encoder": "LAME 3.99",
+                "file_mtime": 1234567892.0,
+                "indexed_at": time.time(),
+            },
+        ]
+        index.store_batch(tracks)
+
+    def test_search_by_artist(self, index):
+        """Search returns matching artists."""
+        self._populate_index(index)
+        results = index.search_tracks("Sia")
+        assert len(results) == 2
+        assert all(r["artist"] == "Sia" for r in results)
+
+    def test_search_by_title(self, index):
+        """Search returns matching titles."""
+        self._populate_index(index)
+        results = index.search_tracks("Bohemian")
+        assert len(results) == 1
+        assert results[0]["title"] == "Bohemian Rhapsody"
+
+    def test_search_by_genre(self, index):
+        """Search returns matching genres."""
+        self._populate_index(index)
+        results = index.search_tracks("Rock")
+        assert len(results) == 1
+        assert results[0]["artist"] == "Queen"
+
+    def test_search_empty_returns_all(self, index):
+        """Empty query returns all tracks."""
+        self._populate_index(index)
+        results = index.search_tracks("")
+        assert len(results) == 3
+
+    def test_search_no_match(self, index):
+        """Non-matching query returns empty list."""
+        self._populate_index(index)
+        results = index.search_tracks("NonexistentArtist")
+        assert len(results) == 0
+
+    def test_search_is_case_insensitive(self, index):
+        """Search is case-insensitive (FTS5 default)."""
+        self._populate_index(index)
+        results_lower = index.search_tracks("sia")
+        results_upper = index.search_tracks("SIA")
+        assert len(results_lower) == len(results_upper) == 2
+
+    def test_search_ranking(self, index):
+        """Results are ranked by relevance (bm25)."""
+        self._populate_index(index)
+        results = index.search_tracks("Sia")
+        # Both results should be Sia tracks
+        assert all(r["artist"] == "Sia" for r in results)
+
+
 class TestSchemaMigration:
     """Schema migration for existing databases."""
 

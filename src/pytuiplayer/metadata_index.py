@@ -37,6 +37,35 @@ CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
 CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
 CREATE INDEX IF NOT EXISTS idx_tracks_mtime ON tracks(file_mtime);
+
+-- FTS5 full-text search index
+CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+    path UNINDEXED,
+    artist,
+    album,
+    title,
+    genre,
+    content='tracks',
+    content_rowid='rowid'
+);
+
+-- Triggers to keep FTS in sync
+CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
+    INSERT INTO tracks_fts(rowid, path, artist, album, title, genre)
+    VALUES (new.rowid, new.path, new.artist, new.album, new.title, new.genre);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tracks_ad AFTER DELETE ON tracks BEGIN
+    INSERT INTO tracks_fts(tracks_fts, rowid, path, artist, album, title, genre)
+    VALUES ('delete', old.rowid, old.path, old.artist, old.album, old.title, old.genre);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
+    INSERT INTO tracks_fts(tracks_fts, rowid, path, artist, album, title, genre)
+    VALUES ('delete', old.rowid, old.path, old.artist, old.album, old.title, old.genre);
+    INSERT INTO tracks_fts(rowid, path, artist, album, title, genre)
+    VALUES (new.rowid, new.path, new.artist, new.album, new.title, new.genre);
+END;
 """
 
 
@@ -68,7 +97,7 @@ class MetadataIndex:
 
     def _migrate_schema(self):
         """Add missing columns to existing databases (forward-compatible).
-        
+
         Handles migration from old schema versions by adding new columns
         if they don't already exist.
         """
@@ -84,7 +113,7 @@ class MetadataIndex:
         # Table exists, check for missing columns
         cursor = self.conn.execute("PRAGMA table_info(tracks)")
         columns = {row[1] for row in cursor.fetchall()}
-        
+
         migrations = [
             ("bitrate", "INTEGER"),
             ("sample_rate", "INTEGER"),
@@ -99,13 +128,60 @@ class MetadataIndex:
             ("genre", "TEXT"),
             ("indexed_at", "REAL"),
         ]
-        
+
         for col_name, col_type in migrations:
             if col_name not in columns:
                 try:
                     self.conn.execute(f"ALTER TABLE tracks ADD COLUMN {col_name} {col_type}")
                 except sqlite3.OperationalError:
                     pass  # Column already exists or other error
+
+        # Migrate FTS index (may not exist in old databases)
+        self._migrate_fts()
+
+    def _migrate_fts(self):
+        """Create FTS index if it doesn't exist."""
+        cursor = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='tracks_fts'"
+        )
+        if cursor.fetchone():
+            return  # FTS table already exists
+
+        try:
+            # Create FTS table and triggers
+            self.conn.executescript("""
+                CREATE VIRTUAL TABLE tracks_fts USING fts5(
+                    path UNINDEXED,
+                    artist,
+                    album,
+                    title,
+                    genre,
+                    content='tracks',
+                    content_rowid='rowid'
+                );
+
+                CREATE TRIGGER tracks_ai AFTER INSERT ON tracks BEGIN
+                    INSERT INTO tracks_fts(rowid, path, artist, album, title, genre)
+                    VALUES (new.rowid, new.path, new.artist, new.album, new.title, new.genre);
+                END;
+
+                CREATE TRIGGER tracks_ad AFTER DELETE ON tracks BEGIN
+                    INSERT INTO tracks_fts(tracks_fts, rowid, path, artist, album, title, genre)
+                    VALUES ('delete', old.rowid, old.path, old.artist, old.album, old.title, old.genre);
+                END;
+
+                CREATE TRIGGER tracks_au AFTER UPDATE ON tracks BEGIN
+                    INSERT INTO tracks_fts(tracks_fts, rowid, path, artist, album, title, genre)
+                    VALUES ('delete', old.rowid, old.path, old.artist, old.album, old.title, old.genre);
+                    INSERT INTO tracks_fts(rowid, path, artist, album, title, genre)
+                    VALUES (new.rowid, new.path, new.artist, new.album, new.title, new.genre);
+                END;
+            """)
+
+            # Populate FTS with existing data
+            self.rebuild_fts_index()
+        except sqlite3.OperationalError as e:
+            logger.debug("FTS migration failed: %s", e)
 
     def close(self):
         """Close the database connection."""
@@ -380,3 +456,58 @@ class MetadataIndex:
         """Get total number of indexed tracks."""
         cursor = self.conn.execute("SELECT COUNT(*) FROM tracks")
         return cursor.fetchone()[0]
+
+    def search_tracks(self, query: str) -> list[dict]:
+        """Full-text search across artist, album, title, genre.
+
+        Uses SQLite FTS5 for lightning-fast search.
+        Returns list of matching tracks with rank ordering.
+        """
+        if not query or not query.strip():
+            return self.get_all_tracks()
+
+        # Use FTS5 for fast full-text search
+        # bm25() returns relevance score (lower = more relevant)
+        try:
+            cursor = self.conn.execute(
+                """
+                SELECT t.path, t.duration, t.artist, t.album, t.title,
+                       t.track, t.year, t.genre, t.bitrate, t.sample_rate,
+                       t.channels, t.encoder
+                FROM tracks_fts fts
+                JOIN tracks t ON t.path = fts.path
+                WHERE tracks_fts MATCH ?
+                ORDER BY bm25(tracks_fts) ASC
+                LIMIT 1000
+                """,
+                (query.strip(),),
+            )
+            columns = [
+                "path", "duration", "artist", "album", "title",
+                "track", "year", "genre", "bitrate", "sample_rate",
+                "channels", "encoder",
+            ]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except sqlite3.OperationalError as e:
+            logger.debug("FTS search failed: %s", e)
+            return []
+
+    def rebuild_fts_index(self):
+        """Rebuild FTS index from scratch (useful for migration)."""
+        try:
+            # Check if FTS table exists
+            cursor = self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='tracks_fts'"
+            )
+            if not cursor.fetchone():
+                return  # FTS table doesn't exist, nothing to rebuild
+
+            # Use INSERT OR REPLACE to rebuild (handles external content tables)
+            self.conn.execute(
+                """
+                INSERT INTO tracks_fts(tracks_fts) VALUES('rebuild')
+                """
+            )
+            self.conn.commit()
+        except sqlite3.OperationalError as e:
+            logger.debug("FTS rebuild failed: %s", e)
