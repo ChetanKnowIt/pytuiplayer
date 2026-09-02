@@ -36,7 +36,10 @@ class PlaylistLoader:
 
     @profile_async
     async def fetch_duration(self, item_data: dict) -> None:
-        """Fetch the duration of a local MP3 and update its list item."""
+        """Fetch the duration of a local MP3 and update its list item.
+
+        Stores result in metadata cache for instant loading next time.
+        """
         src = item_data.get("source")
         if src is None:
             return
@@ -57,6 +60,19 @@ class PlaylistLoader:
             duration = None
 
         item_data["duration"] = duration
+
+        # Store in cache for instant loading next time
+        if duration is not None and hasattr(self.app, 'metadata_index'):
+            try:
+                self.app.metadata_index.store_track({
+                    "path": str(src_path),
+                    "duration": duration,
+                    "title": item_data.get("title") or src_path.name,
+                    "indexed_at": time.time(),
+                })
+            except Exception:
+                logger.debug("Failed to store duration in cache", exc_info=True)
+
         try:
             label_text = item_data.get("title") or (src_path.name if src_path else "")
             # Find the visible widget in the ListView and update its label
@@ -70,41 +86,60 @@ class PlaylistLoader:
 
     @profile_async
     async def load_local_files(self, path: Path):
-        """Load all local MP3 files under path (recursively) into #local-list."""
+        """Load all local MP3 files under path (recursively) into #local-list.
+
+        Uses metadata cache for instant loading of previously-indexed files.
+        Only uncached files will show '--:--' and trigger a background worker.
+        """
         local_list = self.app.query_one("#local-list", ListView)
         local_list.index = None
         local_list.clear()
         self.app.local_items = {}
 
         max_items = self.app.max_playlist_items or float("inf")
-        batch_size = self.app.playlist_batch_size
+        batch_size = min(50, self.app.playlist_batch_size)
         batch: list = []
         count = 0
+        cached_count = 0
 
         try:
             loading = self.app.query_one("#loading-status", Static)
-            loading.update("📂 Scanning for MP3 files...")
+            loading.update("📂 Loading music library...")
         except Exception:
             loading = None
 
+        # Walk directory and build widgets (cache-aware)
         for root, _dirs, files in os.walk(path):
             for name in sorted(files):
                 if not name.lower().endswith(".mp3"):
                     continue
 
                 file = Path(root) / name
-                item = ListItem(Label(f"{file.name:<40} --:--"))
-                item.data = ItemData(source=file, title=file.name, duration=None)
+                item_data = ItemData(source=file, title=file.name, duration=None)
+
+                # Check cache for metadata
+                if hasattr(self.app, 'metadata_index'):
+                    cached = self.app.metadata_index.get_track(str(file))
+                    if cached:
+                        item_data["duration"] = cached.get("duration")
+                        item_data["title"] = cached.get("title") or file.name
+                        item_data["meta"] = cached.get("title") or file.name
+                        cached_count += 1
+
+                duration = item_data.get("duration")
+                duration_str = fmt_mmss(duration) if duration is not None else "--:--"
+                display = f"{item_data['title']:<40} {duration_str}"
+                item = ListItem(Label(display))
+                item.data = item_data
                 batch.append(item)
-                # Store the data dict (not widget) so _filter_local_list can rebuild
-                self.app.local_items[file] = item.data
+                self.app.local_items[file] = item_data
                 count += 1
 
                 if len(batch) >= batch_size:
                     await local_list.mount(*batch)
                     batch.clear()
                     if loading:
-                        loading.update(f"📂 Scanning... ({count} files found)")
+                        loading.update(f"📂 Loading... ({count} tracks)")
                     await asyncio.sleep(0)
 
                 if count >= max_items:
@@ -121,32 +156,19 @@ class PlaylistLoader:
             batch.clear()
 
         if loading:
-            loading.update(f"✅ Loaded {count} tracks")
-            # Show total playlist duration where known
-            total_secs = 0
-            known_dur = 0
-            for data in self.app.local_items.values():
-                dur = data.get("duration")
-                if isinstance(dur, (int, float)) and dur > 0:
-                    total_secs += dur
-                    known_dur += 1
-            if count > 0:
-                if known_dur > 0:
-                    total_str = fmt_mmss(total_secs)
-                    loading.update(
-                        f"📂 Loaded {count} tracks "
-                        f"({known_dur} with dur — {total_str} total)"
-                    )
-                else:
-                    loading.update(
-                        f"✅ Loaded {count} tracks (durations loading...)"
-                    )
-        for idx, item in enumerate(self.app.local_items.values()):
-            self.app.run_worker(
-                partial(self.fetch_duration, item),
-                name=f"fetch_duration:{idx}",
-                exit_on_error=False,
-            )
+            if cached_count == count:
+                loading.update(f"✅ Loaded {count} tracks (cached)")
+            else:
+                loading.update(f"✅ Loaded {count} tracks")
+
+        # Spawn workers only for uncached files
+        for idx, item_data in enumerate(self.app.local_items.values()):
+            if item_data.get("duration") is None:
+                self.app.run_worker(
+                    partial(self.fetch_duration, item_data),
+                    name=f"fetch_duration:{idx}",
+                    exit_on_error=False,
+                )
 
     @profile_async
     async def load_m3u(self, path: Path):

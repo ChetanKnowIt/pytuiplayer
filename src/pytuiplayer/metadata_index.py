@@ -205,6 +205,13 @@ class MetadataIndex:
         )
         self.conn.commit()
 
+    def store_track(self, metadata: dict):
+        """Store a single track's metadata in the cache.
+
+        This is the public API for storing individual track metadata.
+        """
+        self._store_metadata(metadata)
+
     def _store_metadata(self, metadata: dict):
         """Store metadata in the database."""
         self.conn.execute(
