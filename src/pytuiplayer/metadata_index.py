@@ -29,12 +29,14 @@ CREATE TABLE IF NOT EXISTS tracks (
     sample_rate INTEGER,
     channels INTEGER,
     encoder TEXT,
+    file_mtime REAL,
     indexed_at REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
 CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
+CREATE INDEX IF NOT EXISTS idx_tracks_mtime ON tracks(file_mtime);
 """
 
 
@@ -63,6 +65,7 @@ class MetadataIndex:
             ("sample_rate", "INTEGER"),
             ("channels", "INTEGER"),
             ("encoder", "TEXT"),
+            ("file_mtime", "REAL"),
         ]
         
         for col_name, col_type in migrations:
@@ -80,10 +83,14 @@ class MetadataIndex:
         """Scan a music library directory and index all MP3 files.
 
         Uses mutagen for fast metadata extraction.
-        Respects existing entries to avoid re-indexing.
+        Handles incremental indexing:
+        - New files: probe and insert
+        - Modified files: probe and update (detected via mtime)
+        - Deleted files: remove from cache
         """
-        # Find all MP3 files
         start = time.time()
+
+        # Find all MP3 files on disk
         files = list(root.rglob("*.mp3"))
         total = len(files)
         if total == 0:
@@ -92,20 +99,33 @@ class MetadataIndex:
 
         logger.info("Found %d MP3 files in %s", total, root)
 
-        # Filter out already-indexed files
-        indexed = self._get_indexed_paths()
-        new_files = [f for f in files if str(f) not in indexed]
-        logger.info("Already indexed: %d, New: %d", len(indexed), len(new_files))
+        # Get current state from cache
+        current_paths = {str(f) for f in files}
+        cached = self._get_indexed_paths()
 
-        if not new_files:
+        # Detect stale entries (file modified since last index)
+        stale_files = self._find_stale_files(files)
+
+        # Files to index: new + stale
+        new_files = [f for f in files if str(f) not in cached]
+        files_to_index = new_files + stale_files
+        logger.info("New: %d, Stale: %d, Total to index: %d",
+                     len(new_files), len(stale_files), len(files_to_index))
+
+        if not files_to_index:
+            # Still need to remove deleted files from cache
+            deleted = cached - current_paths
+            if deleted:
+                self._remove_tracks(deleted)
+                logger.info("Removed %d deleted tracks from cache", len(deleted))
             return
 
-        # Phase 1: Probe all files in parallel (fast, no DB writes)
+        # Phase 1: Probe all files in parallel
         metadata_list = []
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {
                 executor.submit(self._probe_file, f): f
-                for f in new_files
+                for f in files_to_index
             }
             for future in as_completed(futures):
                 path = futures[future]
@@ -114,20 +134,66 @@ class MetadataIndex:
                     if metadata:
                         metadata_list.append(metadata)
                     if progress_callback:
-                        progress_callback(len(metadata_list), len(new_files))
+                        progress_callback(len(metadata_list), len(files_to_index))
                 except Exception as e:
                     logger.warning("Failed to index %s: %s", path, e)
 
-        # Phase 2: Batch insert all metadata (single transaction, fast)
+        # Phase 2: Batch insert all metadata
         if metadata_list:
             self._store_batch(metadata_list)
-            logger.info("Indexed %d new tracks in %.2fs", len(metadata_list), time.time() - start)
+
+        # Phase 3: Remove deleted files from cache
+        deleted = cached - current_paths
+        if deleted:
+            self._remove_tracks(deleted)
+
+        logger.info("Indexed %d tracks in %.2fs", len(metadata_list), time.time() - start)
+
+    def _find_stale_files(self, files: list[Path]) -> list[Path]:
+        """Find files that have been modified since last indexing.
+
+        Uses a single SQL query for all mtimes (efficient).
+        """
+        if not files:
+            return []
+
+        # Get all cached mtimes in one query
+        paths = [str(f) for f in files]
+        placeholders = ",".join("?" * len(paths))
+        cursor = self.conn.execute(
+            f"SELECT path, file_mtime FROM tracks WHERE path IN ({placeholders})",
+            paths,
+        )
+        cached_mtimes = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Compare mtimes
+        stale = []
+        for f in files:
+            try:
+                mtime = f.stat().st_mtime
+                cached_mtime = cached_mtimes.get(str(f))
+                if cached_mtime is None or mtime > cached_mtime:
+                    stale.append(f)
+            except Exception:
+                pass  # File might be inaccessible
+        return stale
+
+    def _remove_tracks(self, paths: set):
+        """Remove tracks from the database."""
+        if not paths:
+            return
+        placeholders = ",".join("?" * len(paths))
+        self.conn.execute(
+            f"DELETE FROM tracks WHERE path IN ({placeholders})",
+            list(paths),
+        )
+        self.conn.commit()
 
     def _probe_file(self, path: Path) -> dict | None:
         """Probe a single file for metadata using mutagen.
 
         Returns dict with duration, artist, album, title, track, year, genre,
-        bitrate, sample_rate, channels, encoder.
+        bitrate, sample_rate, channels, encoder, file_mtime.
         """
         try:
             audio = MutagenFile(str(path))
@@ -150,6 +216,7 @@ class MetadataIndex:
                 "sample_rate": getattr(info, "sample_rate", None),
                 "channels": getattr(info, "channels", None),
                 "encoder": getattr(info, "encoder_info", None),
+                "file_mtime": path.stat().st_mtime if path.exists() else None,
                 "indexed_at": time.time(),
             }
         except Exception as e:
@@ -190,7 +257,7 @@ class MetadataIndex:
                 m.get("path"), m.get("duration"), m.get("artist"), m.get("album"),
                 m.get("title"), m.get("track"), m.get("year"), m.get("genre"),
                 m.get("bitrate"), m.get("sample_rate"), m.get("channels"), m.get("encoder"),
-                m.get("indexed_at"),
+                m.get("file_mtime"), m.get("indexed_at"),
             )
             for m in metadata_list
         ]
@@ -198,8 +265,8 @@ class MetadataIndex:
             """
             INSERT OR REPLACE INTO tracks
             (path, duration, artist, album, title, track, year, genre,
-             bitrate, sample_rate, channels, encoder, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             bitrate, sample_rate, channels, encoder, file_mtime, indexed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             data,
         )
@@ -218,8 +285,8 @@ class MetadataIndex:
             """
             INSERT OR REPLACE INTO tracks
             (path, duration, artist, album, title, track, year, genre,
-             bitrate, sample_rate, channels, encoder, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             bitrate, sample_rate, channels, encoder, file_mtime, indexed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 metadata.get("path"),
@@ -234,6 +301,7 @@ class MetadataIndex:
                 metadata.get("sample_rate"),
                 metadata.get("channels"),
                 metadata.get("encoder"),
+                metadata.get("file_mtime"),
                 metadata.get("indexed_at"),
             ),
         )
