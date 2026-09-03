@@ -89,7 +89,9 @@ class PlaylistLoader:
 
         Uses metadata cache for instant loading of previously-indexed files.
         Only uncached files will show '--:--' and trigger a background worker.
-        Optimized: bulk cache lookup (1 SQL query) instead of N queries.
+        Optimized:
+        - Bulk cache lookup (1 SQL query) instead of N queries.
+        - Skips "Loading..." message when all files are cached (instant display).
         """
         local_list = self.app.query_one("#local-list", ListView)
         local_list.index = None
@@ -98,15 +100,8 @@ class PlaylistLoader:
 
         max_items = self.app.max_playlist_items or float("inf")
         batch_size = min(50, self.app.playlist_batch_size)
-        batch: list = []
         count = 0
         cached_count = 0
-
-        try:
-            loading = self.app.query_one("#loading-status", Static)
-            loading.update("📂 Loading music library...")
-        except Exception:
-            loading = None
 
         # Phase 1: Walk directory and collect all MP3 paths
         all_files: list[Path] = []
@@ -132,6 +127,7 @@ class PlaylistLoader:
                 logger.debug("Bulk cache lookup failed", exc_info=True)
 
         # Phase 3: Build widgets using cache map
+        batch: list = []
         for file in all_files:
             item_data = ItemData(source=file, title=file.name, duration=None)
 
@@ -155,19 +151,23 @@ class PlaylistLoader:
             if len(batch) >= batch_size:
                 await local_list.mount(*batch)
                 batch.clear()
-                if loading:
-                    loading.update(f"📂 Loading... ({count} tracks)")
                 await asyncio.sleep(0)
 
         if batch:
             await local_list.mount(*batch)
             batch.clear()
 
-        if loading:
-            if cached_count == count:
-                loading.update(f"✅ Loaded {count} tracks (cached)")
-            else:
-                loading.update(f"✅ Loaded {count} tracks")
+        # Phase 4: Show status only if some items need background work
+        if cached_count == count:
+            # All cached — no loading message needed, list is already rendered
+            pass
+        else:
+            # Some uncached — show count, spawn background workers
+            try:
+                loading = self.app.query_one("#loading-status", Static)
+                loading.update(f"✅ Loaded {count} tracks ({cached_count} cached)")
+            except Exception:
+                pass
 
         # Spawn workers only for uncached files
         for idx, item_data in enumerate(self.app.local_items.values()):
@@ -180,7 +180,12 @@ class PlaylistLoader:
 
     @profile_async
     async def load_m3u(self, path: Path):
-        """Load a local M3U playlist into #local-list with cache integration."""
+        """Load a local M3U playlist into #local-list with cache integration.
+
+        Optimized:
+        - Bulk cache lookup (1 SQL query) instead of N queries.
+        - Skips "Loading..." message when all items are cached (instant display).
+        """
         local_list: ListView = self.app.query_one("#local-list", ListView)
         local_list.clear()
         self.app.local_items = {}
@@ -188,12 +193,6 @@ class PlaylistLoader:
         base_dir = path.parent
         max_items = self.app.max_playlist_items or float("inf")
         batch_size = min(50, self.app.playlist_batch_size)
-
-        try:
-            loading = self.app.query_one("#loading-status", Static)
-            loading.update("📂 Loading playlist...")
-        except Exception:
-            loading = None
 
         # Parse all lines to data
         items_data = []
@@ -267,19 +266,26 @@ class PlaylistLoader:
             if len(batch) >= batch_size:
                 await local_list.mount(*batch)
                 batch.clear()
-                if loading:
-                    loading.update(f"📂 Loading... ({idx + 1}/{len(items_data)})")
                 await asyncio.sleep(0)
 
         if batch:
             await local_list.mount(*batch)
             batch.clear()
 
-        if loading:
-            if cached_count > 0:
-                loading.update(f"✅ Loaded {len(items_data)} tracks ({cached_count} cached)")
-            else:
-                loading.update(f"✅ Loaded {len(items_data)} tracks")
+        # Show status only if some items need background work
+        if cached_count == len(items_data):
+            # All cached — no loading message needed, list is already rendered
+            pass
+        else:
+            # Some uncached — show count
+            try:
+                loading = self.app.query_one("#loading-status", Static)
+                if cached_count > 0:
+                    loading.update(f"✅ Loaded {len(items_data)} tracks ({cached_count} cached)")
+                else:
+                    loading.update(f"✅ Loaded {len(items_data)} tracks")
+            except Exception:
+                pass
 
         # Spawn duration workers only for items without duration
         for idx, item_data in enumerate(self.app.local_items.values()):

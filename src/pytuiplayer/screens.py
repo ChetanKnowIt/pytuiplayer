@@ -177,13 +177,15 @@ class LocalScreen(ModeScreen):
         self._search_pending = None
 
     async def _load_local(self) -> None:
-        loading = self.query_one("#loading-status", Static)
-        loading.update("📂 Scanning for MP3 files...")
+        """Load local files. Status messages handled by load_local_files itself."""
         try:
             await self.app.playlist_loader.load_local_files(Path(self._default_music_dir()))
-            loading.update("✅ Ready")
         except Exception:
-            loading.update("❌ Error loading files")
+            try:
+                loading = self.app.query_one("#loading-status", Static)
+                loading.update("❌ Error loading files")
+            except Exception:
+                pass
 
     def cancel_pending_local_load(self) -> None:
         """Cancel the pending local file load (called when loading an M3U)."""
