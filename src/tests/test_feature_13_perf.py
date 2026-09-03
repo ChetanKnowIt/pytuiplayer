@@ -66,6 +66,9 @@ class _FakeListView:
     def clear(self):
         self.children.clear()
 
+    def add_row(self, *values, key=None):
+        self.children.append(values)
+
 
 class TestCacheLookupPerformance:
     """Benchmark cache lookup strategies."""

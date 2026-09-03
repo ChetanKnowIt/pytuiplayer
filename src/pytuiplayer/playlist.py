@@ -11,7 +11,7 @@ from functools import partial
 from pathlib import Path
 
 from mutagen import File as MutagenFile
-from textual.widgets import Label, ListItem, ListView, Static
+from textual.widgets import DataTable, Label, ListItem, ListView, Static
 
 from pytuiplayer.logging_config import get_logger
 from pytuiplayer.profiling import profile_async
@@ -78,12 +78,9 @@ class PlaylistLoader:
 
         try:
             label_text = item_data.get("title") or (src_path.name if src_path else "")
-            # Find the visible widget in the ListView and update its label
-            local_list = self.app.query_one("#local-list", ListView)
-            for child in local_list.children:
-                if getattr(child, "data", None) is item_data:
-                    child.query_one(Label).update(f"{label_text:<40} {fmt_mmss(duration)}")
-                    break
+            # Update the visible row in the DataTable
+            local_list = self.app.query_one("#local-list", DataTable)
+            local_list.update_cell(str(src_path), 0, f"{label_text:<40} {fmt_mmss(duration)}")
         except Exception:
             logger.debug("label update failed (widget torn down)", exc_info=True)
 
@@ -96,14 +93,13 @@ class PlaylistLoader:
         Optimized:
         - Bulk cache lookup (1 SQL query) instead of N queries.
         - Skips "Loading..." message when all files are cached (instant display).
+        - Uses DataTable (virtual scrolling) for instant display with 1000+ items.
         """
-        local_list = self.app.query_one("#local-list", ListView)
-        local_list.index = None
+        local_list = self.app.query_one("#local-list", DataTable)
         local_list.clear()
         self.app.local_items = {}
 
         max_items = self.app.max_playlist_items or float("inf")
-        batch_size = min(50, self.app.playlist_batch_size)
         count = 0
         cached_count = 0
 
@@ -134,8 +130,7 @@ class PlaylistLoader:
             except Exception:
                 logger.debug("Bulk cache lookup failed", exc_info=True)
 
-        # Phase 3: Build widgets using cache map
-        batch: list = []
+        # Phase 3: Add rows to DataTable (virtual scrolling = instant)
         for file in all_files:
             item_data = ItemData(source=file, title=file.name, duration=None)
 
@@ -150,20 +145,9 @@ class PlaylistLoader:
             duration = item_data.get("duration")
             duration_str = fmt_mmss(duration) if duration is not None else "--:--"
             display = f"{item_data['title']:<40} {duration_str}"
-            item = ListItem(Label(display))
-            item.data = item_data
-            batch.append(item)
+            local_list.add_row(display, key=str(file))
             self.app.local_items[file] = item_data
             count += 1
-
-            if len(batch) >= batch_size:
-                await local_list.mount(*batch)
-                batch.clear()
-                await asyncio.sleep(0)
-
-        if batch:
-            await local_list.mount(*batch)
-            batch.clear()
 
         # Phase 4: Show status only if some items need background work
         if cached_count == count:
@@ -193,14 +177,14 @@ class PlaylistLoader:
         Optimized:
         - Bulk cache lookup (1 SQL query) instead of N queries.
         - Skips "Loading..." message when all items are cached (instant display).
+        - Uses DataTable (virtual scrolling) for instant display with 1000+ items.
         """
-        local_list: ListView = self.app.query_one("#local-list", ListView)
+        local_list: DataTable = self.app.query_one("#local-list", DataTable)
         local_list.clear()
         self.app.local_items = {}
 
         base_dir = path.parent
         max_items = self.app.max_playlist_items or float("inf")
-        batch_size = min(50, self.app.playlist_batch_size)
 
         # Parse all lines to data (in thread for mounted drives)
         items_data = []
@@ -237,7 +221,6 @@ class PlaylistLoader:
             logger.debug("M3U parse failed", exc_info=True)
 
         # Build widgets with cache-aware logic (bulk lookup)
-        batch = []
         cached_count = 0
         needs_worker_count = 0
         missing_count = 0
@@ -272,6 +255,7 @@ class PlaylistLoader:
             except Exception:
                 logger.debug("File existence check failed", exc_info=True)
 
+        # Add rows to DataTable (virtual scrolling = instant)
         for idx, (source, label, duration) in enumerate(items_data):
             item_data = ItemData(
                 source=source, title=label, duration=duration, meta=label
@@ -303,19 +287,7 @@ class PlaylistLoader:
                 display = f"{item_data['title']:<40} ⚠ {duration_str} (missing)"
             else:
                 display = f"{item_data['title']:<40} {duration_str}"
-            item = ListItem(Label(display))
-            item.data = item_data
-            item._meta_label = item_data['title']
-            batch.append(item)
-
-            if len(batch) >= batch_size:
-                await local_list.mount(*batch)
-                batch.clear()
-                await asyncio.sleep(0)
-
-        if batch:
-            await local_list.mount(*batch)
-            batch.clear()
+            local_list.add_row(display, key=source)
 
         # Show status with missing file count
         if cached_count == len(items_data) and missing_count == 0:
@@ -447,21 +419,25 @@ class PlaylistNavigator:
     async def _play_adjacent_local(self, direction: int):
         """Navigate to adjacent track in local list (honoring shuffle/repeat)."""
         try:
-            local_list = self.app.query_one("#local-list", ListView)
-            items = self.app._resolve_playlist_items(local_list)
+            local_list = self.app.query_one("#local-list", DataTable)
+            items = list(self.app.local_items.values())
             count = len(items)
             if count == 0:
                 return
 
-            new_index = self._next_index(local_list.index, count, direction)
+            # Get current index from cursor position
+            current_idx = local_list.cursor_row
+            if current_idx is None or current_idx >= count:
+                current_idx = 0
+
+            new_index = self._next_index(current_idx, count, direction)
             if new_index is None:
                 return
 
-            item = items[new_index]
-            data = getattr(item, "data", None)
-            if isinstance(data, dict):
-                self.app.play_local(data)
-                local_list.index = new_index
+            item_data = items[new_index]
+            if isinstance(item_data, dict):
+                self.app.play_local(item_data)
+                local_list.cursor_row = new_index
         except Exception:
             logger.debug("play adjacent local failed", exc_info=True)
 

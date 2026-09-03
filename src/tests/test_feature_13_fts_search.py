@@ -138,6 +138,7 @@ class _FakeListView:
         self.index = None
         self._mount_calls = []
         self._clear_calls = 0
+        self.items = []
 
     async def mount(self, *items):
         self.children.extend(items)
@@ -150,6 +151,11 @@ class _FakeListView:
     def clear(self):
         self.children.clear()
         self._clear_calls += 1
+
+    def add_row(self, *values, key=None):
+        # Store as object with .data attribute for test compatibility
+        item = type('Row', (), {'data': values[0] if values else None})()
+        self.items.append(item)
 
 
 def _make_fake_list_view():
@@ -173,7 +179,7 @@ class TestFTSSearchFiltersByArtist:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "sia"))
 
-        titles = [item.data["title"] for item in fake_lv.children]
+        titles = [item.data for item in fake_lv.items]
         assert len(titles) == 2
         assert "Alive" in titles
         assert "Chandelier" in titles
@@ -186,7 +192,7 @@ class TestFTSSearchFiltersByArtist:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "queen"))
 
-        titles = [item.data["title"] for item in fake_lv.children]
+        titles = [item.data for item in fake_lv.items]
         assert len(titles) == 1
         assert "Bohemian Rhapsody" in titles
 
@@ -202,7 +208,7 @@ class TestFTSSearchFiltersByAlbum:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "fear"))
 
-        titles = [item.data["title"] for item in fake_lv.children]
+        titles = [item.data for item in fake_lv.items]
         assert len(titles) == 1
         assert "Chandelier" in titles
 
@@ -218,7 +224,7 @@ class TestFTSSearchFiltersByGenre:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "rock"))
 
-        titles = [item.data["title"] for item in fake_lv.children]
+        titles = [item.data for item in fake_lv.items]
         assert len(titles) == 1
         assert "Bohemian Rhapsody" in titles
 
@@ -230,7 +236,7 @@ class TestFTSSearchFiltersByGenre:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "pop"))
 
-        titles = [item.data["title"] for item in fake_lv.children]
+        titles = [item.data for item in fake_lv.items]
         assert len(titles) == 2
         assert "Alive" in titles
         assert "Chandelier" in titles
@@ -247,7 +253,7 @@ class TestFTSSearchCaseInsensitive:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "sia"))
 
-        assert len(fake_lv.children) == 2
+        assert len(fake_lv.items) == 2
 
     def test_search_uppercase(self, app_with_fts):
         """Uppercase query matches the same items."""
@@ -257,7 +263,7 @@ class TestFTSSearchCaseInsensitive:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "SIA"))
 
-        assert len(fake_lv.children) == 2
+        assert len(fake_lv.items) == 2
 
     def test_search_mixed_case(self, app_with_fts):
         """Mixed case query matches."""
@@ -267,7 +273,7 @@ class TestFTSSearchCaseInsensitive:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "SiA"))
 
-        assert len(fake_lv.children) == 2
+        assert len(fake_lv.items) == 2
 
 
 class TestFTSSearchIntersectsWithLoadedItems:
@@ -284,7 +290,7 @@ class TestFTSSearchIntersectsWithLoadedItems:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "sia"))
 
-        assert len(fake_lv.children) == 0
+        assert len(fake_lv.items) == 0
 
     def test_loaded_but_not_indexed_excluded(self, app_with_fts):
         """Item in local_items but not in index is excluded."""
@@ -299,7 +305,7 @@ class TestFTSSearchIntersectsWithLoadedItems:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "sia"))
 
-        titles = [item.data["title"] for item in fake_lv.children]
+        titles = [item.data for item in fake_lv.items]
         # Only the 2 Sia tracks — unknown song is excluded
         assert len(titles) == 2
         assert "Unknown Song" not in titles
@@ -316,7 +322,7 @@ class TestFTSSearchNoMatch:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "nonexistent"))
 
-        assert len(fake_lv.children) == 0
+        assert len(fake_lv.items) == 0
 
 
 class TestFTSSearchEmptyQuery:
@@ -330,7 +336,7 @@ class TestFTSSearchEmptyQuery:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, ""))
 
-        assert len(fake_lv.children) == 3
+        assert len(fake_lv.items) == 3
 
 
 # ===========================================================================
@@ -349,7 +355,7 @@ class TestFallbackTitleScan:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "bohemian"))
 
-        titles = [item.data["title"] for item in fake_lv.children]
+        titles = [item.data for item in fake_lv.items]
         assert len(titles) == 1
         assert "Bohemian Rhapsody" in titles
 
@@ -361,7 +367,7 @@ class TestFallbackTitleScan:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "BOHEMIAN"))
 
-        titles = [item.data["title"] for item in fake_lv.children]
+        titles = [item.data for item in fake_lv.items]
         assert len(titles) == 1
 
     def test_fallback_empty_query_returns_all(self, app_no_index):
@@ -372,7 +378,7 @@ class TestFallbackTitleScan:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, ""))
 
-        assert len(fake_lv.children) == 3
+        assert len(fake_lv.items) == 3
 
     def test_fallback_no_match(self, app_no_index):
         """No match returns empty list."""
@@ -382,7 +388,7 @@ class TestFallbackTitleScan:
         with patch.object(type(screen), "app", new_callable=PropertyMock, return_value=app):
             asyncio.run(screen._filter_local_list(fake_lv, "nonexistent"))
 
-        assert len(fake_lv.children) == 0
+        assert len(fake_lv.items) == 0
 
 
 # ===========================================================================

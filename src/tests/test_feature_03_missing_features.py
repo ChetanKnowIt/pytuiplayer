@@ -355,6 +355,13 @@ def _mountable_list():
         def clear(self):
             self.items.clear()
 
+    def add_row(self, *values, key=None):
+        self.items.append(values)
+
+    def add_row(self, *values, key=None):
+        self.items.append(values)
+
+
         async def mount(self, *items):
             self.items.extend(items)
 

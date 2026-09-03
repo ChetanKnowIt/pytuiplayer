@@ -14,6 +14,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import (
     Button,
+    DataTable,
     DirectoryTree,
     Footer,
     Header,
@@ -685,20 +686,12 @@ class MusicPlayerApp(App):
     def _tag_playing_item_for_source(self, source_str: str) -> None:
         """Find the list item whose data.source matches source_str and tag it."""
         try:
-            local_list = self.query_one("#local-list", ListView)
-            children = list(getattr(local_list, "children", []))
-            for i, child in enumerate(children):
-                data = getattr(child, "data", None)
-                if isinstance(data, dict):
-                    src = data.get("source")
-                else:
-                    src = getattr(data, "source", None) if data else None
-                if src is not None and str(src) == str(source_str):
-                    self._tag_playing_item(local_list, i)
+            local_list = self.query_one("#local-list", DataTable)
+            # Find the row with matching source
+            for row_key in local_list.rows:
+                if row_key == source_str:
+                    local_list.cursor_row = local_list.rows.index(row_key)
                     return
-            # No match found — still clear other tags
-            for child in children:
-                child.remove_class("playing", "not-playing")
         except Exception:
             logger.debug("_tag_playing_item_for_source failed", exc_info=True)
 

@@ -20,6 +20,8 @@ Winamp-style layout:
   ├────────────┴────────────────────────────────────────┤
   │ Footer (key hints)                                  │
   └─────────────────────────────────────────────────────┘
+
+Uses DataTable for the local list (virtual scrolling = instant with 1000+ items).
 """
 
 from pathlib import Path
@@ -30,6 +32,7 @@ from textual.events import Key
 from textual.screen import Screen
 from textual.widgets import (
     Button,
+    DataTable,
     DirectoryTree,
     Footer,
     Header,
@@ -123,7 +126,6 @@ class RadioScreen(ModeScreen):
         station_list = self.query_one("#station-list", ListView)
         station_list.border_title = "Radio Stations"
         # Load stations if not already loaded, or re-populate if the list is empty
-        # (e.g., after switching back from LocalScreen which creates a fresh RadioScreen).
         if not self.app.stations or not station_list.children:
             self.set_timer(0.1, self._load_stations)
 
@@ -140,7 +142,7 @@ class LocalScreen(ModeScreen):
     Winamp-style:
       - Search input at top of content area (type to filter)
       - DirectoryTree for browsing
-      - ListView for results
+      - DataTable for results (virtual scrolling = instant with 1000+ items)
       - Loading indicator during file scan
     """
 
@@ -153,7 +155,7 @@ class LocalScreen(ModeScreen):
         yield Input(placeholder="Type to filter tracks...", id="search-input")
         yield DirectoryTree(self._default_music_dir(), id="directory-tree")
         yield Static("", id="loading-status")
-        yield ListView(id="local-list")
+        yield DataTable(id="local-list", zebra_stripes=True)
 
     @staticmethod
     def _default_music_dir() -> str:
@@ -168,13 +170,17 @@ class LocalScreen(ModeScreen):
 
     def on_mount(self) -> None:
         super().on_mount()
-        local_list = self.query_one("#local-list", ListView)
+        local_list = self.query_one("#local-list", DataTable)
         local_list.border_title = "Local Music"
+        local_list.cursor_type = "row"
+        local_list.zebra_stripes = True
         # Defer local file loading to avoid race condition with M3U loading.
-        # The timer is stored so it can be cancelled if an M3U is loaded first.
         self._pending_local_load = self.set_timer(0.1, self._load_local)
         # Debounce timer for search input (None = no pending search)
         self._search_pending = None
+        # Query result cache for instant backspace/re-type
+        self._query_cache = {}
+        self._cache_items_id = None
 
     async def _load_local(self) -> None:
         """Load local files. Status messages handled by load_local_files itself."""
@@ -207,7 +213,7 @@ class LocalScreen(ModeScreen):
         self._search_pending = None
         search_input = self.query_one("#search-input", Input)
         query = search_input.value.lower().strip()
-        local_list = self.query_one("#local-list", ListView)
+        local_list = self.query_one("#local-list", DataTable)
         await self._filter_local_list(local_list, query)
 
     @on(Input.Submitted, "#search-input")
@@ -223,7 +229,7 @@ class LocalScreen(ModeScreen):
                 search_input.blur()
                 # Clear search to restore full list
                 search_input.value = ""
-                local_list = self.query_one("#local-list", ListView)
+                local_list = self.query_one("#local-list", DataTable)
                 await self._filter_local_list(local_list, "")
                 event.prevent_default()
 
@@ -269,7 +275,7 @@ class LocalScreen(ModeScreen):
                 matched.append(item_data)
         return matched
 
-    async def _filter_local_list(self, local_list: ListView, query: str) -> None:
+    async def _filter_local_list(self, local_list: DataTable, query: str) -> None:
         """Filter the local list to show only items matching the query.
 
         Uses FTS5 when metadata index is available, otherwise falls back to
@@ -324,36 +330,24 @@ class LocalScreen(ModeScreen):
                 self._query_cache.clear()
             self._query_cache[query] = items_to_show
 
-        # Clear old children
-        await local_list.remove_children()
-        await asyncio.sleep(0)
+        # Clear table and rebuild
+        local_list.clear()
 
-        # Build and mount in chunks
-        batch_size = 100
-        batch = []
+        # Add rows in chunks (DataTable virtual scrolling makes this instant)
         for item_data in items_to_show:
             if isinstance(item_data, dict):
                 title = item_data.get("title", "")
                 duration = item_data.get("duration")
+                source = item_data.get("source", "")
             else:
                 title = getattr(item_data, "title", "")
                 duration = getattr(item_data, "duration", None)
+                source = getattr(item_data, "source", "")
 
             duration_str = fmt_mmss(duration) if duration is not None else ""
             if item_data.get("missing"):
-                display = f"{title:<40} ⚠ {duration_str} (missing)"
-            else:
-                display = f"{title:<40} {duration_str}"
-            item = ListItem(Label(display))
-            item.data = item_data
-            batch.append(item)
+                title = f"⚠ {title} (missing)"
 
-            if len(batch) >= batch_size:
-                await local_list.mount(*batch)
-                batch.clear()
-                await asyncio.sleep(0)
-
-        if batch:
-            await local_list.mount(*batch)
-
-
+            # Use source path as row key for stable identification
+            row_key = str(source) if source else str(id(item_data))
+            local_list.add_row(title, duration_str, key=row_key)

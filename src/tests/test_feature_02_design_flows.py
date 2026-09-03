@@ -182,6 +182,13 @@ def test_item_data_unified_typeddict(tmp_path):
             self.index = None
         def clear(self):
             self.items.clear()
+
+    def add_row(self, *values, key=None):
+        self.items.append(values)
+
+    def add_row(self, *values, key=None):
+        self.items.append(values)
+
         async def mount(self, *items):
             self.items.extend(items)
 

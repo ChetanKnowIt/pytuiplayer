@@ -414,6 +414,10 @@ song2.mp3
             self.items = []
         def clear(self):
             self.items.clear()
+
+        def add_row(self, *values, key=None):
+            self.items.append(values)
+
         async def mount(self, *items):
             self.items.extend(items)
 
@@ -451,6 +455,10 @@ def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: Mo
             self.items = []
         def clear(self):
             self.items.clear()
+
+        def add_row(self, *values, key=None):
+            self.items.append(values)
+
         async def mount(self, *items):
             self.items.extend(items)
 
@@ -594,6 +602,13 @@ def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: M
             self.items = []
         def clear(self):
             self.items.clear()
+
+    def add_row(self, *values, key=None):
+        self.items.append(values)
+
+        def add_row(self, *values, key=None):
+            self.items.append(values)
+
         async def mount(self, *items):
             self.items.extend(items)
 
