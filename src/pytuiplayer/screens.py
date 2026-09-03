@@ -276,6 +276,7 @@ class LocalScreen(ModeScreen):
         linear title substring scan.
         Rebuilds fresh ListItems from stored data to avoid blank entries
         that occur when reusing detached widgets after clear()+mount().
+        Optimized: builds widgets in chunks with yields to keep UI responsive.
         """
         import asyncio
 
@@ -294,9 +295,13 @@ class LocalScreen(ModeScreen):
         else:
             items_to_show = self._resolve_search_results(query, all_items)
 
-        # Clear and rebuild based on filter
-        # First, create all new items
-        new_items = []
+        # Clear old children
+        await local_list.remove_children()
+        await asyncio.sleep(0)
+
+        # Build and mount in chunks to avoid blocking the event loop
+        batch_size = 50
+        batch = []
         for item_data in items_to_show:
             if isinstance(item_data, dict):
                 title = item_data.get("title", "")
@@ -310,20 +315,16 @@ class LocalScreen(ModeScreen):
                 display = f"{title:<40} ⚠ {duration_str} (missing)"
             else:
                 display = f"{title:<40} {duration_str}"
-            # Pass Label to constructor - this is the reliable way
             item = ListItem(Label(display))
             item.data = item_data
-            new_items.append(item)
+            batch.append(item)
 
-        # Remove old children and await completion
-        await local_list.remove_children()
-        # Yield to let Textual complete the removal
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+            if len(batch) >= batch_size:
+                await local_list.mount(*batch)
+                batch.clear()
+                await asyncio.sleep(0)
 
-        # Mount all new items at once
-        await local_list.mount(*new_items)
+        if batch:
+            await local_list.mount(*batch)
 
 
