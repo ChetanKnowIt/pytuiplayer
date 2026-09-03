@@ -225,38 +225,44 @@ UI polish identified during the architecture + UI review. 8 items, 9 new tests.
 
 **Next up:**
 
-### feature/13-audio-visualizer — **PAUSED** (branch `feature/13-audio-visualizer-v2`)
+### feature/13-audio-visualizer — **ACTIVE** (branch `feature/13-audio-visualizer-v2`)
 Add real-time audio visualizer — render amplitude/frequency data as ASCII art in the TUI.
 Modes: waveform (time-domain), spectrum (frequency-domain via FFT), VU meter.
 
-**Status:** Paused after implementing metadata cache foundation. Visualizer itself not yet started.
+**Status:** Metadata cache + FTS search + DataTable virtual scrolling complete. Visualizer itself not yet started.
 
 **New Module:**
 - `src/pytuiplayer/metadata_index.py` — MetadataIndex class with SQLite cache + FTS5 full-text search
 
 **Changes:**
 - `constants.py` — Added METADATA_DB_PATH (XDG-compliant: `~/.local/share/pytuiplayer/metadata.db`)
-- `tui_app.py` — Initialize MetadataIndex in __init__, close on cleanup, update NowPlaying with real metadata
-- `playlist.py` — load_m3u() and load_local_files() are cache-aware, fetch_duration() writes to cache
+- `tui_app.py` — Initialize MetadataIndex in __init__, close on cleanup, update NowPlaying with real metadata, DataTable support
+- `playlist.py` — load_m3u() and load_local_files() are cache-aware with bulk lookup, fetch_duration() writes to cache, DataTable support
 - `widgets.py` — _khz/_kbps now show real values per track
+- `screens.py` — LocalScreen uses DataTable (virtual scrolling), debounced search with query cache, M3U missing file handling
+- `utils.py` — M3U backslash escape handling in resolve_source
 
-**Tests:** 32 tests in `test_metadata_index.py` (cache init, schema, persistence, FTS search, staleness, migration)
+**Tests:** 217 passed (3 remaining failures need FakeList test infrastructure updates)
 
-**Performance:**
-- First scan: ~1 min for 2000 files (mutagen, 2ms per file)
-- Subsequent loads: instant (SQLite query)
-- Search: FTS5 full-text across artist/album/title/genre
+**Performance (2000 items):**
+| Operation | Time |
+|-----------|------|
+| Bulk cache lookup | 10ms |
+| FTS search | 0.04–8ms |
+| DataTable add_row | ~10ms total |
+| Full search flow | ~10ms |
+| Load display | Instant (virtual scrolling) |
 
 **Known Issues (Backlog):**
-1. M3U first-load slow (files without #EXTINF have unknown durations initially)
-2. Search widget janky (UI locks on each keystroke, needs debouncing + async search)
-3. No FTS integration tests for search widget
+1. 3 test failures — FakeList classes need add_row method
+2. Visualizer not yet implemented — waveform/spectrum/VU meter rendering
+3. ffmpeg decode pipeline needed for local file visualization
 
 **Next Steps:**
-1. Add tests for FTS search integration
-2. Fix search widget (debounce + async FTS query)
-3. Wire FTS search into LocalScreen search widget
-4. Implement actual audio visualizer (waveform/spectrum/VU meter)
+1. Fix remaining 3 test failures
+2. Implement actual audio visualizer (waveform/spectrum/VU meter)
+3. Build ffmpeg decode pipeline for local files
+4. Integrate visualizer into NowPlaying widget
 
 ---
 
