@@ -38,7 +38,11 @@ class PlaylistLoader:
         """Fetch the duration of a local MP3 and update its list item.
 
         Stores result in metadata cache for instant loading next time.
+        Skips files marked as missing (path no longer exists).
         """
+        if item_data.get("missing"):
+            return
+
         src = item_data.get("source")
         if src is None:
             return
@@ -222,6 +226,7 @@ class PlaylistLoader:
         batch = []
         cached_count = 0
         needs_worker_count = 0
+        missing_count = 0
 
         # Bulk cache lookup: collect all sources that need lookup
         sources_to_lookup = [
@@ -250,6 +255,12 @@ class PlaylistLoader:
                         item_data["meta"] = cached.get("title") or label
                         cached_count += 1
 
+            # Check if file exists (for local filesystem paths)
+            if not source.startswith(("http://", "https://", "rtmp://", "ftp://")):
+                if not Path(source).exists():
+                    item_data["missing"] = True
+                    missing_count += 1
+
             # Track if we need to spawn a worker for this item
             if item_data.get("duration") is None:
                 needs_worker_count += 1
@@ -257,7 +268,10 @@ class PlaylistLoader:
             self.app.local_items[source] = item_data
 
             duration_str = fmt_mmss(item_data.get("duration")) if item_data.get("duration") is not None else ""
-            display = f"{item_data['title']:<40} {duration_str}"
+            if item_data.get("missing"):
+                display = f"{item_data['title']:<40} ⚠ File not found"
+            else:
+                display = f"{item_data['title']:<40} {duration_str}"
             item = ListItem(Label(display))
             item.data = item_data
             item._meta_label = item_data['title']
@@ -272,18 +286,19 @@ class PlaylistLoader:
             await local_list.mount(*batch)
             batch.clear()
 
-        # Show status only if some items need background work
-        if cached_count == len(items_data):
-            # All cached — no loading message needed, list is already rendered
-            pass
+        # Show status with missing file count
+        if cached_count == len(items_data) and missing_count == 0:
+            pass  # All cached, no missing
         else:
-            # Some uncached — show count
             try:
                 loading = self.app.query_one("#loading-status", Static)
+                parts = []
                 if cached_count > 0:
-                    loading.update(f"✅ Loaded {len(items_data)} tracks ({cached_count} cached)")
-                else:
-                    loading.update(f"✅ Loaded {len(items_data)} tracks")
+                    parts.append(f"{cached_count} cached")
+                if missing_count > 0:
+                    parts.append(f"{missing_count} missing")
+                status = ", ".join(parts) if parts else f"{len(items_data)} tracks"
+                loading.update(f"✅ Loaded {len(items_data)} tracks ({status})")
             except Exception:
                 pass
 
