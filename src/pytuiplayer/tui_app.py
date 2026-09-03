@@ -755,6 +755,16 @@ class MusicPlayerApp(App):
                 source_path = source_path.resolve()
             except Exception:
                 logger.debug("path resolution failed", exc_info=True)
+
+            # Verify file exists before handing to mpv
+            if not source_path.exists():
+                logger.warning("File not found: %s", source_path)
+                try:
+                    self.update_now_playing(f"File not found: {source_path.name}", "", "⚠")
+                except Exception:
+                    logger.debug("update_now_playing failed", exc_info=True)
+                return
+
             self.mpv.play(str(source_path))
         except Exception:
             try:

@@ -236,7 +236,7 @@ def test_action_play_playlist_reports_empty_playlist():
 # ---------------------------------------------------------------------------
 # Gap #13 — keyboard binding
 # ---------------------------------------------------------------------------
-def test_playlist_keyboard_binding_plays():
+def test_playlist_keyboard_binding_plays(tmp_path):
     """A binding maps to play_playlist and plays the first playlist item."""
     bindings = {
         b.key: b.action for b in MusicPlayerApp.BINDINGS if hasattr(b, "action")
@@ -247,15 +247,22 @@ def test_playlist_keyboard_binding_plays():
 
     mpv = FakeMPV()
     app = make_app(mpv)
-    data = {"source": Path("/music/first.mp3"), "title": "First", "duration": None}
-    view = FakeListView([FakeItem(data), FakeItem({"source": Path("/music/2.mp3")})])
+
+    # Create real temp files
+    mp3_first = tmp_path / "first.mp3"
+    mp3_first.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+    mp3_second = tmp_path / "2.mp3"
+    mp3_second.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
+    data = {"source": mp3_first, "title": "First", "duration": None}
+    view = FakeListView([FakeItem(data), FakeItem({"source": mp3_second})])
     app.query_one = lambda *a, **k: view
 
     # Invoke the action exactly as Textual's key dispatch would.
     with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         getattr(app, f"action_{bindings[key]}")()
 
-    assert ("play", str(Path("/music/first.mp3"))) in mpv.calls
+    assert ("play", str(mp3_first)) in mpv.calls
 
 
 # ---------------------------------------------------------------------------

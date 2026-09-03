@@ -163,20 +163,24 @@ def test_on_list_view_selected_station_mode():
     assert station_list.index == 0
 
 
-def test_on_list_view_selected_local_mode():
+def test_on_list_view_selected_local_mode(tmp_path):
     """#4 — selecting a local item triggers play_local (mpv.play with source)."""
     mpv = FakeMPV()
     app = _stub_app(MusicPlayerApp(), mpv=mpv)
     app.option_mode = "local"
 
-    item_data = {"source": "/tmp/song.mp3", "meta": "Artist - Track"}
+    # Create a real temp file
+    mp3 = tmp_path / "song.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
+    item_data = {"source": str(mp3), "meta": "Artist - Track"}
     event = types.SimpleNamespace(
         list_view=types.SimpleNamespace(id="local-list"),
         item=types.SimpleNamespace(data=item_data),
     )
     asyncio.run(app.on_list_view_selected(event))
 
-    assert ("play", "/tmp/song.mp3") in mpv.calls
+    assert ("play", str(mp3)) in mpv.calls
     assert app.current_title == "Artist - Track"
     assert app.currently_playing == "local"
 
@@ -282,7 +286,7 @@ def test_play_local_url_bypasses_file_checks():
     assert app.current_title == "My Stream"
 
 
-def test_play_local_failure_shows_error():
+def test_play_local_failure_shows_error(tmp_path):
     """#11 — when mpv.play raises, the UI is told playback failed."""
 
     class BoomMPV(FakeMPV):
@@ -295,7 +299,11 @@ def test_play_local_failure_shows_error():
     captured = []
     app.update_now_playing = lambda *a, **k: captured.append(a)
 
-    app.play_local(Path("/tmp/does-not-exist.mp3"))
+    # Create a real temp file so it passes the existence check
+    mp3 = tmp_path / "boom.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
+    app.play_local(mp3)
 
     assert captured
     assert captured[0][0] == "Failed to play file"

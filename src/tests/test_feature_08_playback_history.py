@@ -158,15 +158,15 @@ def test_play_station_records_history():
     assert recent[0]["source"] == "http://one"
 
 
-def test_play_local_filesystem_records_history():
+def test_play_local_filesystem_records_history(tmp_path):
     app = _make_app()
-    app.play_local(Path("/tmp/song.mp3"))
+    mp3 = tmp_path / "song.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+    app.play_local(mp3)
     recent = app.recent_history()
     assert len(recent) == 1
     assert recent[0]["mode"] == "local"
-    assert recent[0]["source"] == str(Path("/tmp/song.mp3").resolve()) or recent[0][
-        "source"
-    ].endswith("song.mp3")
+    assert recent[0]["source"] == str(mp3.resolve()) or recent[0]["source"].endswith("song.mp3")
 
 
 def test_play_local_url_records_history_as_local_mode():
@@ -179,25 +179,32 @@ def test_play_local_url_records_history_as_local_mode():
     assert recent[0]["source"] == "http://stream/radio.mp3"
 
 
-def test_history_interleaved_radio_and_local():
+def test_history_interleaved_radio_and_local(tmp_path):
     app = _make_app()
     app.stations = type(
         "S", (), {"stations": [{"name": "RR", "url": "http://rr"}]}
     )()
     app.stations.play = lambda idx: None
 
-    app.play_local(Path("/tmp/a.mp3"))
+    mp3_a = tmp_path / "a.mp3"
+    mp3_a.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+    mp3_b = tmp_path / "b.mp3"
+    mp3_b.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
+    app.play_local(mp3_a)
     asyncio.run(app.play_station({"name": "RR", "url": "http://rr"}, 0))
-    app.play_local(Path("/tmp/b.mp3"))
+    app.play_local(mp3_b)
 
     recent = app.recent_history()
     assert [e["title"] for e in recent] == ["b", "RR", "a"]
     assert [e["mode"] for e in recent] == ["local", "radio", "local"]
 
 
-def test_action_play_history_last_replays_local():
+def test_action_play_history_last_replays_local(tmp_path):
     app = _make_app()
-    app.play_local(Path("/tmp/again.mp3"))
+    mp3 = tmp_path / "again.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+    app.play_local(mp3)
 
     # Stub replay target so we don't need a real mpv path resolution.
     app.mpv.play = lambda src: setattr(app, "_replayed", src)

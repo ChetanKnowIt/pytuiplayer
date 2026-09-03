@@ -1,10 +1,11 @@
+from pathlib import Path
 from textual.widgets import Label, ListItem
 
 from pytuiplayer.tui_app import MusicPlayerApp
 from pytuiplayer.widgets import NowPlaying
 
 
-def test_app_shows_nowplaying_during_play_and_progress():
+def test_app_shows_nowplaying_during_play_and_progress(tmp_path):
     app = MusicPlayerApp()
 
     class FakeMPV:
@@ -21,12 +22,16 @@ def test_app_shows_nowplaying_during_play_and_progress():
 
     app.mpv = FakeMPV()
 
+    # Create a real temp file
+    mp3 = tmp_path / "integration.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
     # Prepare widgets that query_one will return
     now_widget = NowPlaying()
 
     # Prepare a fake local list with one playlist item
     item = ListItem(Label("song.mp3"))
-    item.data = {"source": "/tmp/integration.mp3", "meta": "Integrate - Test"}
+    item.data = {"source": str(mp3), "meta": "Integrate - Test"}
 
     class FakeList:
         def __init__(self, items):
@@ -35,7 +40,6 @@ def test_app_shows_nowplaying_during_play_and_progress():
     fake_list = FakeList([item])
 
     def query_one(selector, *a, **k):
-        # allow selectors by id or by class
         if selector == "#local-list":
             return fake_list
         if selector == NowPlaying:
@@ -47,7 +51,7 @@ def test_app_shows_nowplaying_during_play_and_progress():
     # Start playback of the playlist
     app.action_play_playlist()
 
-    assert app.mpv.last == "/tmp/integration.mp3"
+    assert app.mpv.last == str(mp3)
     # update_now_playing should have set the current_title
     assert app.current_title == "Integrate - Test"
 

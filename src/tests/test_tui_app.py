@@ -292,7 +292,7 @@ def test_progressbar_shows_radio_meta_when_streaming():
     assert "Artist - Track" in bar.render()
 
 
-def test_play_local_calls_mpv_and_sets_title():
+def test_play_local_calls_mpv_and_sets_title(tmp_path):
     app = MusicPlayerApp()
 
     class FakeMPV:
@@ -306,7 +306,9 @@ def test_play_local_calls_mpv_and_sets_title():
     # avoid touching the textual DOM in unit tests
     app.update_now_playing = lambda *a, **k: None
 
-    p = Path("/tmp/song.mp3")
+    # Create a real temp file so play_local's existence check passes
+    p = tmp_path / "song.mp3"
+    p.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
     app.play_local(p)
 
     assert mpv.last == str(p)
@@ -314,7 +316,31 @@ def test_play_local_calls_mpv_and_sets_title():
     assert app.current_title == p.stem
 
 
-def test_directory_tree_selection_plays_file_when_local():
+def test_play_local_file_not_found_shows_warning():
+    """When file doesn't exist, show warning instead of silent failure."""
+    app = MusicPlayerApp()
+
+    class FakeMPV:
+        def __init__(self):
+            self.last = None
+        def play(self, source):
+            self.last = source
+
+    mpv = FakeMPV()
+    app.mpv = mpv
+    app.update_now_playing = lambda *a, **k: None
+
+    # Non-existent file
+    p = Path("/tmp/does_not_exist.mp3")
+    app.play_local(p)
+
+    # Should NOT have called mpv.play
+    assert mpv.last is None
+    # Should NOT have set currently_playing
+    assert app.currently_playing is None
+
+
+def test_directory_tree_selection_plays_file_when_local(tmp_path):
     import asyncio
     import types
 
@@ -330,13 +356,17 @@ def test_directory_tree_selection_plays_file_when_local():
     app.option_mode = "local"
     app.update_now_playing = lambda *a, **k: None
 
-    event = types.SimpleNamespace(path=str(Path("/tmp/other.mp3")))
+    # Create a real temp file
+    mp3 = tmp_path / "other.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
+    event = types.SimpleNamespace(path=str(mp3))
     asyncio.run(app.on_directory_tree_file_selected(event))
 
-    assert app.mpv.last == str(Path("/tmp/other.mp3"))
+    assert app.mpv.last == str(mp3)
 
 
-def test_play_local_uses_mutagen_tags_if_available(monkeypatch: MonkeyPatch):
+def test_play_local_uses_mutagen_tags_if_available(monkeypatch: MonkeyPatch, tmp_path):
     app = MusicPlayerApp()
 
     class FakeMPV:
@@ -348,13 +378,16 @@ def test_play_local_uses_mutagen_tags_if_available(monkeypatch: MonkeyPatch):
     app.mpv = FakeMPV()
     app.update_now_playing = lambda *a, **k: None
 
+    # Create a real temp file
+    mp3 = tmp_path / "tagged.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
     # The app uses the module-level MutagenFile binding; patch it there.
     def fake_mutagen_file(*a, **k):
         return {"album": ["MyAlbum"], "title": ["MyTitle"]}
     monkeypatch.setattr("pytuiplayer.tui_app.MutagenFile", fake_mutagen_file)
 
-    p = Path("/tmp/tagged.mp3")
-    app.play_local(p)
+    app.play_local(mp3)
 
     assert app.current_title == "MyAlbum - MyTitle"
 
@@ -441,7 +474,7 @@ def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: Mo
     assert calls["sleep_called"] >= 1
 
 
-def test_playlist_item_uses_extinf_metadata_on_play():
+def test_playlist_item_uses_extinf_metadata_on_play(tmp_path):
     """Selecting a playlist item created by `load_m3u` should use the
     playlist `#EXTINF` metadata as the displayed `current_title` when played.
     """
@@ -460,10 +493,14 @@ def test_playlist_item_uses_extinf_metadata_on_play():
     app.update_now_playing = lambda *a, **k: None
     app.option_mode = "local"
 
+    # Create a real temp file
+    mp3 = tmp_path / "song.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
     # Create a fake list item as load_m3u now produces: {source, meta}
     from textual.widgets import Label, ListItem
     item = ListItem(Label("song.mp3"))
-    item.data = {"source": "/tmp/song.mp3", "meta": "Artist X - Track Y"}
+    item.data = {"source": str(mp3), "meta": "Artist X - Track Y"}
 
     # Build a simple event object expected by on_list_view_selected
     list_view = types.SimpleNamespace(id="local-list")
@@ -471,11 +508,11 @@ def test_playlist_item_uses_extinf_metadata_on_play():
 
     asyncio.run(app.on_list_view_selected(event))
 
-    assert app.mpv.last == "/tmp/song.mp3"
+    assert app.mpv.last == str(mp3)
     assert app.current_title == "Artist X - Track Y"
 
 
-def test_play_playlist_starts_first_item():
+def test_play_playlist_starts_first_item(tmp_path):
     app = MusicPlayerApp()
 
     class FakeMPV:
@@ -487,9 +524,13 @@ def test_play_playlist_starts_first_item():
     app.mpv = FakeMPV()
     app.update_now_playing = lambda *a, **k: None
 
+    # Create a real temp file
+    mp3 = tmp_path / "first.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
     from textual.widgets import Label, ListItem
     item = ListItem(Label("song.mp3"))
-    item.data = {"source": "/tmp/first.mp3", "meta": "First - Song"}
+    item.data = {"source": str(mp3), "meta": "First - Song"}
 
     class FakeList:
         def __init__(self, items):
@@ -500,7 +541,7 @@ def test_play_playlist_starts_first_item():
 
     app.action_play_playlist()
 
-    assert app.mpv.last == "/tmp/first.mp3"
+    assert app.mpv.last == str(mp3)
     assert app.current_title == "First - Song"
 
 
