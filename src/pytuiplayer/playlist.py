@@ -255,8 +255,10 @@ class PlaylistLoader:
                         item_data["meta"] = cached.get("title") or label
                         cached_count += 1
 
-            # Check if file exists (for local filesystem paths)
-            if not source.startswith(("http://", "https://", "rtmp://", "ftp://")):
+            # Check if file exists (for local filesystem paths without cached duration)
+            # Only mark as missing if we have NO cached metadata — cached duration is valid
+            # even if the file was later moved/deleted (user may want to see what was there)
+            if item_data.get("duration") is None and not source.startswith(("http://", "https://", "rtmp://", "ftp://")):
                 if not Path(source).exists():
                     item_data["missing"] = True
                     missing_count += 1
