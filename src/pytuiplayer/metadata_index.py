@@ -420,6 +420,32 @@ class MetadataIndex:
         cursor = self.conn.execute("SELECT path FROM tracks")
         return {row[0] for row in cursor.fetchall()}
 
+    def get_tracks_bulk(self, paths: list[str]) -> list[dict | None]:
+        """Get metadata for multiple tracks efficiently.
+
+        Uses a single SQL query with WHERE path IN (...).
+        Returns results in the same order as input paths.
+        """
+        if not paths:
+            return []
+        placeholders = ",".join("?" * len(paths))
+        cursor = self.conn.execute(
+            f"""SELECT path, duration, artist, album, title, track, year, genre,
+                bitrate, sample_rate, channels, encoder
+                FROM tracks WHERE path IN ({placeholders})
+                ORDER BY artist, album, track""",
+            paths,
+        )
+        columns = [
+            "path", "duration", "artist", "album", "title", "track", "year", "genre",
+            "bitrate", "sample_rate", "channels", "encoder",
+        ]
+        path_to_track = {
+            row[0]: dict(zip(columns, row, strict=True))
+            for row in cursor.fetchall()
+        }
+        return [path_to_track.get(p) for p in paths]
+
     def get_all_tracks(self) -> list[dict]:
         """Get all indexed tracks."""
         cursor = self.conn.execute(

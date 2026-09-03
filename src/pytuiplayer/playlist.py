@@ -89,6 +89,7 @@ class PlaylistLoader:
 
         Uses metadata cache for instant loading of previously-indexed files.
         Only uncached files will show '--:--' and trigger a background worker.
+        Optimized: bulk cache lookup (1 SQL query) instead of N queries.
         """
         local_list = self.app.query_one("#local-list", ListView)
         local_list.index = None
@@ -107,48 +108,56 @@ class PlaylistLoader:
         except Exception:
             loading = None
 
-        # Walk directory and build widgets (cache-aware)
+        # Phase 1: Walk directory and collect all MP3 paths
+        all_files: list[Path] = []
         for root, _dirs, files in os.walk(path):
             for name in sorted(files):
                 if not name.lower().endswith(".mp3"):
                     continue
-
-                file = Path(root) / name
-                item_data = ItemData(source=file, title=file.name, duration=None)
-
-                # Check cache for metadata
-                if hasattr(self.app, 'metadata_index'):
-                    cached = self.app.metadata_index.get_track(str(file))
-                    if cached:
-                        item_data["duration"] = cached.get("duration")
-                        item_data["title"] = cached.get("title") or file.name
-                        item_data["meta"] = cached.get("title") or file.name
-                        cached_count += 1
-
-                duration = item_data.get("duration")
-                duration_str = fmt_mmss(duration) if duration is not None else "--:--"
-                display = f"{item_data['title']:<40} {duration_str}"
-                item = ListItem(Label(display))
-                item.data = item_data
-                batch.append(item)
-                self.app.local_items[file] = item_data
-                count += 1
-
-                if len(batch) >= batch_size:
-                    await local_list.mount(*batch)
-                    batch.clear()
-                    if loading:
-                        loading.update(f"📂 Loading... ({count} tracks)")
-                    await asyncio.sleep(0)
-
-                if count >= max_items:
-                    if batch:
-                        await local_list.mount(*batch)
-                        batch.clear()
+                all_files.append(Path(root) / name)
+                if len(all_files) >= max_items:
                     break
             else:
                 continue
             break
+
+        # Phase 2: Bulk cache lookup (single SQL query)
+        cache_map: dict[str, dict] = {}
+        if hasattr(self.app, "metadata_index") and all_files:
+            try:
+                paths_str = [str(f) for f in all_files]
+                cached_tracks = self.app.metadata_index.get_tracks_bulk(paths_str)
+                cache_map = {t["path"]: t for t in cached_tracks if t is not None}
+            except Exception:
+                logger.debug("Bulk cache lookup failed", exc_info=True)
+
+        # Phase 3: Build widgets using cache map
+        for file in all_files:
+            item_data = ItemData(source=file, title=file.name, duration=None)
+
+            # Check cache map for metadata
+            cached = cache_map.get(str(file))
+            if cached:
+                item_data["duration"] = cached.get("duration")
+                item_data["title"] = cached.get("title") or file.name
+                item_data["meta"] = cached.get("title") or file.name
+                cached_count += 1
+
+            duration = item_data.get("duration")
+            duration_str = fmt_mmss(duration) if duration is not None else "--:--"
+            display = f"{item_data['title']:<40} {duration_str}"
+            item = ListItem(Label(display))
+            item.data = item_data
+            batch.append(item)
+            self.app.local_items[file] = item_data
+            count += 1
+
+            if len(batch) >= batch_size:
+                await local_list.mount(*batch)
+                batch.clear()
+                if loading:
+                    loading.update(f"📂 Loading... ({count} tracks)")
+                await asyncio.sleep(0)
 
         if batch:
             await local_list.mount(*batch)
@@ -210,21 +219,32 @@ class PlaylistLoader:
                 if len(items_data) >= max_items:
                     break
 
-        # Build widgets with cache-aware logic
+        # Build widgets with cache-aware logic (bulk lookup)
         batch = []
         cached_count = 0
         needs_worker_count = 0
+
+        # Bulk cache lookup: collect all sources that need lookup
+        sources_to_lookup = [
+            source for source, label, duration in items_data if duration is None
+        ]
+        cache_map: dict[str, dict] = {}
+        if sources_to_lookup and hasattr(self.app, "metadata_index"):
+            try:
+                cached_tracks = self.app.metadata_index.get_tracks_bulk(sources_to_lookup)
+                cache_map = {t["path"]: t for t in cached_tracks if t is not None}
+            except Exception:
+                logger.debug("Bulk cache lookup failed", exc_info=True)
 
         for idx, (source, label, duration) in enumerate(items_data):
             item_data = ItemData(
                 source=source, title=label, duration=duration, meta=label
             )
 
-            # Check cache for existing metadata (only if we don't have duration from EXTINF)
-            if duration is None and hasattr(self.app, 'metadata_index'):
-                cached = self.app.metadata_index.get_track(source)
+            # Check cache map for existing metadata
+            if item_data.get("duration") is None:
+                cached = cache_map.get(source)
                 if cached:
-                    # Use cached duration if available
                     if cached.get("duration"):
                         item_data["duration"] = cached["duration"]
                         item_data["title"] = cached.get("title") or label
