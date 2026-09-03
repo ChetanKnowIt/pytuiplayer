@@ -240,7 +240,25 @@ class PlaylistLoader:
             except Exception:
                 logger.debug("Bulk cache lookup failed", exc_info=True)
 
-        for _idx, (source, label, duration) in enumerate(items_data):
+        # Check file existence in background thread (avoids UI lock)
+        local_sources = [
+            (idx, source) for idx, (source, label, duration) in enumerate(items_data)
+            if not source.startswith(("http://", "https://", "rtmp://", "ftp://"))
+        ]
+        missing_indices: set[int] = set()
+        if local_sources:
+            try:
+                def check_files():
+                    result = set()
+                    for idx, src in local_sources:
+                        if not Path(src).exists():
+                            result.add(idx)
+                    return result
+                missing_indices = await asyncio.to_thread(check_files)
+            except Exception:
+                logger.debug("File existence check failed", exc_info=True)
+
+        for idx, (source, label, duration) in enumerate(items_data):
             item_data = ItemData(
                 source=source, title=label, duration=duration, meta=label
             )
@@ -255,13 +273,10 @@ class PlaylistLoader:
                         item_data["meta"] = cached.get("title") or label
                         cached_count += 1
 
-            # Check if file exists (for local filesystem paths)
-            # Even if we have cached duration, mark as missing if the file is gone
-            # so the user sees the indicator BEFORE trying to play
-            if not source.startswith(("http://", "https://", "rtmp://", "ftp://")):
-                if not Path(source).exists():
-                    item_data["missing"] = True
-                    missing_count += 1
+            # Mark as missing if file doesn't exist
+            if idx in missing_indices:
+                item_data["missing"] = True
+                missing_count += 1
 
             # Track if we need to spawn a worker for this item
             if item_data.get("duration") is None:

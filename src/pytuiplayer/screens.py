@@ -306,7 +306,10 @@ class LocalScreen(ModeScreen):
                 duration = getattr(item_data, "duration", None)
 
             duration_str = fmt_mmss(duration) if duration is not None else ""
-            display = f"{title:<40} {duration_str}"
+            if item_data.get("missing"):
+                display = f"{title:<40} ⚠ {duration_str} (missing)"
+            else:
+                display = f"{title:<40} {duration_str}"
             # Pass Label to constructor - this is the reliable way
             item = ListItem(Label(display))
             item.data = item_data
