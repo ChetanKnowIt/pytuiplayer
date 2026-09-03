@@ -56,7 +56,7 @@ class PlaylistLoader:
             return
 
         try:
-            audio = MutagenFile(str(src_path))
+            audio = await asyncio.to_thread(MutagenFile, str(src_path))
             duration = int(audio.info.length) if audio and audio.info else None
         except Exception:
             logger.debug("mutagen read failed for %s", src_path, exc_info=True)
@@ -107,18 +107,22 @@ class PlaylistLoader:
         count = 0
         cached_count = 0
 
-        # Phase 1: Walk directory and collect all MP3 paths
+        # Phase 1: Walk directory and collect all MP3 paths (in thread for mounted drives)
         all_files: list[Path] = []
-        for root, _dirs, files in os.walk(path):
-            for name in sorted(files):
-                if not name.lower().endswith(".mp3"):
-                    continue
-                all_files.append(Path(root) / name)
-                if len(all_files) >= max_items:
-                    break
-            else:
-                continue
-            break
+        try:
+            def walk_dir():
+                files = []
+                for root, _dirs, filenames in os.walk(path):
+                    for name in sorted(filenames):
+                        if not name.lower().endswith(".mp3"):
+                            continue
+                        files.append(Path(root) / name)
+                        if len(files) >= max_items:
+                            return files
+                return files
+            all_files = await asyncio.to_thread(walk_dir)
+        except Exception:
+            logger.debug("Directory walk failed", exc_info=True)
 
         # Phase 2: Bulk cache lookup (single SQL query)
         cache_map: dict[str, dict] = {}
@@ -198,29 +202,39 @@ class PlaylistLoader:
         max_items = self.app.max_playlist_items or float("inf")
         batch_size = min(50, self.app.playlist_batch_size)
 
-        # Parse all lines to data
+        # Parse all lines to data (in thread for mounted drives)
         items_data = []
         pending_meta: str | None = None
         pending_dur: int | None = None
 
-        with open(path, encoding="utf-8", errors="replace") as f:
-            for raw in f:
-                line = raw.strip()
-                if not line or line.startswith("#"):
-                    if line.startswith("#EXTINF"):
-                        pending_dur, pending_meta = parse_extinf(line)
-                    continue
+        def parse_m3u():
+            data = []
+            pend_meta = None
+            pend_dur = None
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith("#"):
+                        if line.startswith("#EXTINF"):
+                            pend_dur, pend_meta = parse_extinf(line)
+                        continue
 
-                source = resolve_source(base_dir, line)
-                label = pending_meta or Path(source).name
-                duration = pending_dur
+                    source = resolve_source(base_dir, line)
+                    label = pend_meta or Path(source).name
+                    duration = pend_dur
 
-                pending_meta = None
-                pending_dur = None
+                    pend_meta = None
+                    pend_dur = None
 
-                items_data.append((source, label, duration))
-                if len(items_data) >= max_items:
-                    break
+                    data.append((source, label, duration))
+                    if len(data) >= max_items:
+                        break
+            return data
+
+        try:
+            items_data = await asyncio.to_thread(parse_m3u)
+        except Exception:
+            logger.debug("M3U parse failed", exc_info=True)
 
         # Build widgets with cache-aware logic (bulk lookup)
         batch = []

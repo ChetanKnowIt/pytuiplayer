@@ -503,6 +503,12 @@ class MusicPlayerApp(App):
                         local_screen.cancel_pending_local_load()
                 except Exception:
                     pass
+                # Show loading message
+                try:
+                    loading = self.query_one("#loading-status", Static)
+                    loading.update("📂 Loading playlist...")
+                except Exception:
+                    pass
                 await self.playlist_loader.load_m3u(path)
                 self.notify(f"✅Loaded playlist {path.name}")
                 return
@@ -751,10 +757,14 @@ class MusicPlayerApp(App):
         # treat as local filesystem path
         try:
             source_path = Path(source_str)
-            try:
-                source_path = source_path.resolve()
-            except Exception:
-                logger.debug("path resolution failed", exc_info=True)
+            # Only resolve if needed (resolve can fail on mounted drives)
+            if not source_path.exists():
+                try:
+                    resolved = source_path.resolve()
+                    if resolved.exists():
+                        source_path = resolved
+                except Exception:
+                    logger.debug("path resolution failed", exc_info=True)
 
             # Verify file exists before handing to mpv
             if not source_path.exists():
