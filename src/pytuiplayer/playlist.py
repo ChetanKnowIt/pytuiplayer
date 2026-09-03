@@ -255,10 +255,10 @@ class PlaylistLoader:
                         item_data["meta"] = cached.get("title") or label
                         cached_count += 1
 
-            # Check if file exists (for local filesystem paths without cached duration)
-            # Only mark as missing if we have NO cached metadata — cached duration is valid
-            # even if the file was later moved/deleted (user may want to see what was there)
-            if item_data.get("duration") is None and not source.startswith(("http://", "https://", "rtmp://", "ftp://")):
+            # Check if file exists (for local filesystem paths)
+            # Even if we have cached duration, mark as missing if the file is gone
+            # so the user sees the indicator BEFORE trying to play
+            if not source.startswith(("http://", "https://", "rtmp://", "ftp://")):
                 if not Path(source).exists():
                     item_data["missing"] = True
                     missing_count += 1
@@ -271,7 +271,7 @@ class PlaylistLoader:
 
             duration_str = fmt_mmss(item_data.get("duration")) if item_data.get("duration") is not None else ""
             if item_data.get("missing"):
-                display = f"{item_data['title']:<40} ⚠ File not found"
+                display = f"{item_data['title']:<40} ⚠ {duration_str} (missing)"
             else:
                 display = f"{item_data['title']:<40} {duration_str}"
             item = ListItem(Label(display))
