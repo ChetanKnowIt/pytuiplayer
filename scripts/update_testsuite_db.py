@@ -65,6 +65,8 @@ FILE_DESCRIPTIONS = {
         "feature/12: UI polish (~/Music scan, faster marquee, flexible volume, button pressed).",
     "src/tests/test_metadata_index.py":
         "feature/13: metadata index (SQLite cache, mutagen probing, staleness detection).",
+    "src/tests/test_feature_13_fts_search.py":
+        "feature/13: FTS search integration (search widget + FTS index).",
 }
 
 # ---------------------------------------------------------------------------
@@ -404,6 +406,45 @@ BACKLOG = [
      "Migration adds missing columns to existing databases", "done", "feature/13"),
     ("test_migrate_is_idempotent", "unit",
      "Running migration multiple times is safe", "done", "feature/13"),
+    # FTS integration tests (search widget + FTS index)
+    ("test_search_by_artist_returns_matching_items", "integration",
+     "Search delegates to FTS and filters by artist", "done", "feature/13 FTS"),
+    ("test_search_by_artist_excludes_non_matching", "integration",
+     "FTS search excludes non-matching artists", "done", "feature/13 FTS"),
+    ("test_search_by_album", "integration",
+     "FTS search filters by album name", "done", "feature/13 FTS"),
+    ("test_search_by_genre_rock", "integration",
+     "FTS search filters by genre (rock)", "done", "feature/13 FTS"),
+    ("test_search_by_genre_pop", "integration",
+     "FTS search filters by genre (pop)", "done", "feature/13 FTS"),
+    ("test_search_lowercase", "integration",
+     "FTS search is case-insensitive (lowercase)", "done", "feature/13 FTS"),
+    ("test_search_uppercase", "integration",
+     "FTS search is case-insensitive (uppercase)", "done", "feature/13 FTS"),
+    ("test_search_mixed_case", "integration",
+     "FTS search is case-insensitive (mixed case)", "done", "feature/13 FTS"),
+    ("test_indexed_but_not_loaded_excluded", "integration",
+     "FTS results intersected with loaded items only", "done", "feature/13 FTS"),
+    ("test_loaded_but_not_indexed_excluded", "integration",
+     "Items not in FTS index are excluded from results", "done", "feature/13 FTS"),
+    ("test_search_no_match", "integration",
+     "FTS search with no matches returns empty list", "done", "feature/13 FTS"),
+    ("test_empty_query_returns_all", "integration",
+     "Empty FTS query returns all loaded items", "done", "feature/13 FTS"),
+    ("test_fallback_filters_by_title", "integration",
+     "Fallback: linear title scan when index empty", "done", "feature/13 FTS"),
+    ("test_fallback_is_case_insensitive", "integration",
+     "Fallback: case-insensitive title scan", "done", "feature/13 FTS"),
+    ("test_fallback_empty_query_returns_all", "integration",
+     "Fallback: empty query returns all items", "done", "feature/13 FTS"),
+    ("test_fallback_no_match", "integration",
+     "Fallback: no match returns empty list", "done", "feature/13 FTS"),
+    ("test_debounce_attribute_exists", "unit",
+     "Search input debounce timer exists", "done", "feature/13 FTS"),
+    ("test_debounce_timer_created", "unit",
+     "Debounce timer created on keystroke", "done", "feature/13 FTS"),
+    ("test_escape_clears_input_value", "integration",
+     "Escape key clears search input", "done", "feature/13 FTS"),
 ]
 
 

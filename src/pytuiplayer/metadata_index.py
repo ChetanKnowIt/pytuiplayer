@@ -6,8 +6,8 @@ using mutagen for fast metadata extraction and SQLite for storage.
 
 import sqlite3
 import time
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 from mutagen import File as MutagenFile
 

@@ -173,6 +173,8 @@ class LocalScreen(ModeScreen):
         # Defer local file loading to avoid race condition with M3U loading.
         # The timer is stored so it can be cancelled if an M3U is loaded first.
         self._pending_local_load = self.set_timer(0.1, self._load_local)
+        # Debounce timer for search input (None = no pending search)
+        self._search_pending = None
 
     async def _load_local(self) -> None:
         loading = self.query_one("#loading-status", Static)
@@ -191,8 +193,18 @@ class LocalScreen(ModeScreen):
 
     @on(Input.Changed, "#search-input")
     async def on_search_changed(self, event: Input.Changed) -> None:
-        """Filter local list items based on search input (case-insensitive)."""
-        query = event.value.lower().strip()
+        """Debounced search: filter local list after typing pauses (~150ms)."""
+        # Cancel any pending search from a previous keystroke
+        if self._search_pending:
+            self._search_pending.stop()
+        # Schedule a new search after the debounce window
+        self._search_pending = self.set_timer(0.15, self._run_debounced_search)
+
+    async def _run_debounced_search(self) -> None:
+        """Called after debounce timer fires — execute the actual search."""
+        self._search_pending = None
+        search_input = self.query_one("#search-input", Input)
+        query = search_input.value.lower().strip()
         local_list = self.query_one("#local-list", ListView)
         await self._filter_local_list(local_list, query)
 
@@ -213,9 +225,53 @@ class LocalScreen(ModeScreen):
                 await self._filter_local_list(local_list, "")
                 event.prevent_default()
 
+    def _resolve_search_results(self, query: str, all_items: dict) -> list:
+        """Resolve which items match the query.
+
+        Strategy:
+        1. If metadata_index has data → use FTS5 full-text search across
+           artist/album/title/genre, then intersect results with loaded items.
+        2. Otherwise → fall back to linear title substring scan.
+
+        Returns list of item_data dicts matching the query.
+        """
+        metadata_index = getattr(self.app, "metadata_index", None)
+        if metadata_index and metadata_index.get_track_count() > 0:
+            try:
+                fts_results = metadata_index.search_tracks(query)
+                if fts_results:
+                    # Build set of FTS-matched paths for fast lookup
+                    fts_paths = {r["path"] for r in fts_results}
+                    # Intersect: only items both loaded AND matched by FTS
+                    matched = []
+                    for item_data in all_items.values():
+                        src = item_data.get("source") if isinstance(item_data, dict) else None
+                        if src is None:
+                            continue
+                        # Match by stringified source path
+                        if str(src) in fts_paths:
+                            matched.append(item_data)
+                    return matched
+            except Exception:
+                # FTS failure — fall through to linear scan
+                pass
+
+        # Fallback: linear title substring scan (no index or FTS failed)
+        matched = []
+        for item_data in all_items.values():
+            if isinstance(item_data, dict):
+                title_text = item_data.get("title", "")
+            else:
+                title_text = getattr(item_data, "title", "")
+            if query in str(title_text).lower():
+                matched.append(item_data)
+        return matched
+
     async def _filter_local_list(self, local_list: ListView, query: str) -> None:
         """Filter the local list to show only items matching the query.
 
+        Uses FTS5 when metadata index is available, otherwise falls back to
+        linear title substring scan.
         Rebuilds fresh ListItems from stored data to avoid blank entries
         that occur when reusing detached widgets after clear()+mount().
         """
@@ -227,18 +283,14 @@ class LocalScreen(ModeScreen):
         if not all_items:
             return
 
-        # Determine which items to show
+        # Normalize query (lowercase, strip)
+        query = query.lower().strip() if query else ""
+
+        # Determine which items to show (FTS or fallback)
         if not query:
             items_to_show = list(all_items.values())
         else:
-            items_to_show = []
-            for item_data in all_items.values():
-                if isinstance(item_data, dict):
-                    title_text = item_data.get("title", "")
-                else:
-                    title_text = getattr(item_data, "title", "")
-                if query in str(title_text).lower():
-                    items_to_show.append(item_data)
+            items_to_show = self._resolve_search_results(query, all_items)
 
         # Clear and rebuild based on filter
         # First, create all new items
@@ -250,14 +302,14 @@ class LocalScreen(ModeScreen):
             else:
                 title = getattr(item_data, "title", "")
                 duration = getattr(item_data, "duration", None)
-            
+
             duration_str = fmt_mmss(duration) if duration is not None else ""
             display = f"{title:<40} {duration_str}"
             # Pass Label to constructor - this is the reliable way
             item = ListItem(Label(display))
             item.data = item_data
             new_items.append(item)
-        
+
         # Remove old children and await completion
         await local_list.remove_children()
         # Yield to let Textual complete the removal
@@ -265,7 +317,7 @@ class LocalScreen(ModeScreen):
         await asyncio.sleep(0)
         await asyncio.sleep(0)
         await asyncio.sleep(0)
-        
+
         # Mount all new items at once
         await local_list.mount(*new_items)
 
