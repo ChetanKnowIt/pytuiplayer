@@ -110,6 +110,28 @@ class TestFTSSearchPerformance:
             print(f"\n[PERF] FTS search '{q}': {elapsed*1000:.2f}ms ({len(results)} results)")
 
 
+class TestBulkLookupChunking:
+    """Test bulk lookup handles >999 paths correctly."""
+
+    def test_get_tracks_bulk_over_999_paths(self, tmp_path):
+        """Bulk lookup works with >999 paths (SQLite parameter limit)."""
+        app = _make_app_with_index(tmp_path, 2500)
+
+        # All 2500 paths
+        paths = [f"/music/artist{i % 100}/album{i % 50}/song{i}.mp3" for i in range(2500)]
+        results = app.metadata_index.get_tracks_bulk(paths)
+
+        assert len(results) == 2500
+        assert all(r is not None for r in results)
+        print("\n[PERF] get_tracks_bulk(2500 paths): all returned")
+
+    def test_get_tracks_bulk_empty(self, tmp_path):
+        """Bulk lookup with empty list returns empty."""
+        app = _make_app_with_index(tmp_path, 100)
+        results = app.metadata_index.get_tracks_bulk([])
+        assert results == []
+
+
 class TestEndToEndLoading:
     """End-to-end loading benchmarks."""
 

@@ -423,27 +423,36 @@ class MetadataIndex:
     def get_tracks_bulk(self, paths: list[str]) -> list[dict | None]:
         """Get metadata for multiple tracks efficiently.
 
-        Uses a single SQL query with WHERE path IN (...).
+        Uses batched SQL queries with WHERE path IN (...).
+        Handles >999 paths by chunking (SQLite parameter limit).
         Returns results in the same order as input paths.
         """
         if not paths:
             return []
-        placeholders = ",".join("?" * len(paths))
-        cursor = self.conn.execute(
-            f"""SELECT path, duration, artist, album, title, track, year, genre,
-                bitrate, sample_rate, channels, encoder
-                FROM tracks WHERE path IN ({placeholders})
-                ORDER BY artist, album, track""",
-            paths,
-        )
+
+        # SQLite has a parameter limit (default 999). Chunk to stay under it.
+        # Use 500 to be safe across builds.
+        chunk_size = 500
+        path_to_track: dict[str, dict] = {}
+
         columns = [
             "path", "duration", "artist", "album", "title", "track", "year", "genre",
             "bitrate", "sample_rate", "channels", "encoder",
         ]
-        path_to_track = {
-            row[0]: dict(zip(columns, row, strict=True))
-            for row in cursor.fetchall()
-        }
+
+        for i in range(0, len(paths), chunk_size):
+            chunk = paths[i : i + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            cursor = self.conn.execute(
+                f"""SELECT path, duration, artist, album, title, track, year, genre,
+                    bitrate, sample_rate, channels, encoder
+                    FROM tracks WHERE path IN ({placeholders})
+                    ORDER BY artist, album, track""",
+                chunk,
+            )
+            for row in cursor.fetchall():
+                path_to_track[row[0]] = dict(zip(columns, row, strict=True))
+
         return [path_to_track.get(p) for p in paths]
 
     def get_all_tracks(self) -> list[dict]:
@@ -455,7 +464,7 @@ class MetadataIndex:
         )
         columns = ["path", "duration", "artist", "album", "title", "track", "year", "genre",
                    "bitrate", "sample_rate", "channels", "encoder"]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
 
     def get_track(self, path: str) -> dict | None:
         """Get metadata for a specific track."""
@@ -469,7 +478,7 @@ class MetadataIndex:
         if row:
             columns = ["path", "duration", "artist", "album", "title", "track", "year", "genre",
                        "bitrate", "sample_rate", "channels", "encoder"]
-            return dict(zip(columns, row))
+            return dict(zip(columns, row, strict=True))
         return None
 
     def get_total_duration(self) -> float:
@@ -513,7 +522,7 @@ class MetadataIndex:
                 "track", "year", "genre", "bitrate", "sample_rate",
                 "channels", "encoder",
             ]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+            return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
         except sqlite3.OperationalError as e:
             logger.debug("FTS search failed: %s", e)
             return []

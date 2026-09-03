@@ -235,7 +235,7 @@ class PlaylistLoader:
             except Exception:
                 logger.debug("Bulk cache lookup failed", exc_info=True)
 
-        for idx, (source, label, duration) in enumerate(items_data):
+        for _idx, (source, label, duration) in enumerate(items_data):
             item_data = ItemData(
                 source=source, title=label, duration=duration, meta=label
             )
