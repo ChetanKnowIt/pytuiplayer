@@ -274,9 +274,8 @@ class LocalScreen(ModeScreen):
 
         Uses FTS5 when metadata index is available, otherwise falls back to
         linear title substring scan.
-        Rebuilds fresh ListItems from stored data to avoid blank entries
-        that occur when reusing detached widgets after clear()+mount().
-        Optimized: builds widgets in chunks with yields to keep UI responsive.
+        Optimized: query result cache — caches matching item lists by query string
+        so backspace/re-type doesn't re-run FTS.
         """
         import asyncio
 
@@ -289,18 +288,48 @@ class LocalScreen(ModeScreen):
         # Normalize query (lowercase, strip)
         query = query.lower().strip() if query else ""
 
-        # Determine which items to show (FTS or fallback)
+        # Query result cache (cleared when local_items changes)
+        if not hasattr(self, '_query_cache'):
+            self._query_cache = {}
+            self._cache_items_id = id(all_items)
+        elif id(all_items) != self._cache_items_id:
+            # local_items was reset — clear cache
+            self._query_cache.clear()
+            self._cache_items_id = id(all_items)
+
+        # Determine which items to show
         if not query:
             items_to_show = list(all_items.values())
+        elif query in self._query_cache:
+            # Cache hit — reuse previous results
+            items_to_show = self._query_cache[query]
         else:
-            items_to_show = self._resolve_search_results(query, all_items)
+            # Check if any cached query is a prefix of current (filter from it)
+            items_to_show = None
+            for cached_query, cached_results in sorted(self._query_cache.items(), key=lambda x: -len(x[0])):
+                if query.startswith(cached_query) and len(cached_results) < len(all_items):
+                    # Filter from cached results (smaller set, no FTS needed)
+                    items_to_show = [
+                        item_data for item_data in cached_results
+                        if query in str(item_data.get("title", "") if isinstance(item_data, dict) else getattr(item_data, "title", "")).lower()
+                    ]
+                    break
+
+            if items_to_show is None:
+                # Full search
+                items_to_show = self._resolve_search_results(query, all_items)
+
+            # Cache results (limit cache size)
+            if len(self._query_cache) > 50:
+                self._query_cache.clear()
+            self._query_cache[query] = items_to_show
 
         # Clear old children
         await local_list.remove_children()
         await asyncio.sleep(0)
 
-        # Build and mount in chunks to avoid blocking the event loop
-        batch_size = 50
+        # Build and mount in chunks
+        batch_size = 100
         batch = []
         for item_data in items_to_show:
             if isinstance(item_data, dict):
