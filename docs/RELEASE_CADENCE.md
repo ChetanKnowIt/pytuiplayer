@@ -16,8 +16,8 @@ feature branches**, bumping the MINOR version and tagging `v*.*.0` on `main` to 
 ## Running counter
 
 - Last release: v0.2.0
-- Features since last release: 0
-- Next release: v0.3.0 — due after 3 more merged feature branches.
+- Features since last release: 1 (feature/13-audio-visualizer-v2 — metadata index + FTS search + DataTable migration, merged 2026-10-13)
+- Next release: v0.3.0 — due after 2 more merged feature branches.
 
 ## How to cut a release (when 3 features are in)
 

@@ -1,18 +1,16 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`feature/13-audio-visualizer-v2` (active, multiple commits ahead of main)
+`main` (feature/13-audio-visualizer-v2 merged 2026-10-13)
 
-## Completed This Session
+## Current State
+- 230 tests pass, ruff clean
+- Release counter: 1/3 features since v0.2.0 (v0.3.0 due after 2 more merges)
+- Next feature: audio visualization / richer metadata display (not yet started)
 
-### Architecture Review (complete)
-- Read and analyzed all source modules
-- Verified baseline: 156 tests pass, ruff clean
+## Completed
 
-### feature/12-ui-polish (MERGED to main)
-All 8 planned items implemented + tested (9 new tests)
-
-### feature/13-audio-visualizer-v2 — DataTable Migration + Playback Integration
+### feature/13-audio-visualizer-v2 — DataTable Migration + Playback Integration (MERGED to main 2026-10-13)
 Migrated from ListView to DataTable with full playback integration.
 
 **New files:**
@@ -44,9 +42,7 @@ Migrated from ListView to DataTable with full playback integration.
 - Async I/O (asyncio.to_thread) for all file operations to prevent UI lock
 
 ## Current State
-- **230 tests pass**
-- ruff clean
-- Branch: `feature/13-audio-visualizer-v2`
+- **230 tests pass**, ruff clean (see top of file for the live branch state)
 
 ## Performance Profile (2000 items)
 | Operation | Time |
