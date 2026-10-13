@@ -49,6 +49,13 @@ from pytuiplayer.widgets import NowPlaying, VolumeIndicator
 logger = get_logger("screens")
 
 
+def _item_title(item_data) -> str:
+    """Get the display title from an item data dict or object."""
+    if isinstance(item_data, dict):
+        return str(item_data.get("title", ""))
+    return str(getattr(item_data, "title", ""))
+
+
 class ModeScreen(Screen):
     """Base class for mode screens — composes shared + mode-specific widgets.
 
@@ -318,12 +325,15 @@ class LocalScreen(ModeScreen):
             else:
                 # Check if any cached query is a prefix of current (filter from it)
                 items_to_show = None
-                for cached_query, cached_results in sorted(self._query_cache.items(), key=lambda x: -len(x[0])):
+                for cached_query, cached_results in sorted(
+                    self._query_cache.items(), key=lambda x: -len(x[0])
+                ):
                     if query.startswith(cached_query) and len(cached_results) < len(all_items):
                         # Filter from cached results (smaller set, no FTS needed)
                         items_to_show = [
-                            item_data for item_data in cached_results
-                            if query in str(item_data.get("title", "") if isinstance(item_data, dict) else getattr(item_data, "title", "")).lower()
+                            item_data
+                            for item_data in cached_results
+                            if query in _item_title(item_data).lower()
                         ]
                         break
 

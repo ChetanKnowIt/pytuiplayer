@@ -469,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[update] refreshed {len(discovered)} test module file rows")
 
         # 2) Sync backlog mirror.
-        if args.reset-backlog:
+        if getattr(args, "reset_backlog", False):  # noqa: F821  (argparse dest with hyphen)
             conn.execute("DELETE FROM backlog")
         for name, kind, desc, status, source in BACKLOG:
             upsert_backlog(conn, name, kind, desc, status, source)

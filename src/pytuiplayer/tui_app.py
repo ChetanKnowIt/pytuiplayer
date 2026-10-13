@@ -22,6 +22,7 @@ from textual.widgets import (
     Label,
     ListItem,
     ListView,
+    Static,
 )
 
 from pytuiplayer.constants import (
@@ -465,7 +466,8 @@ class MusicPlayerApp(App):
             except Exception as exc:
                 logger.warning("play_local failed for %s: %s", row_key, exc, exc_info=True)
                 try:
-                    self.update_now_playing(f"Failed to play: {item_data.get('title', row_key)}", "", "⚠")
+                    title = item_data.get("title", row_key)
+                    self.update_now_playing(f"Failed to play: {title}", "", "⚠")
                 except Exception:
                     pass
 

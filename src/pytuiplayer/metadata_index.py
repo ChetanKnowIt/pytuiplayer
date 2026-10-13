@@ -166,15 +166,27 @@ class MetadataIndex:
                 END;
 
                 CREATE TRIGGER tracks_ad AFTER DELETE ON tracks BEGIN
-                    INSERT INTO tracks_fts(tracks_fts, rowid, path, artist, album, title, genre)
-                    VALUES ('delete', old.rowid, old.path, old.artist, old.album, old.title, old.genre);
+                    INSERT INTO tracks_fts(
+                        tracks_fts, rowid, path, artist, album, title, genre
+                    ) VALUES (
+                        'delete', old.rowid, old.path, old.artist,
+                        old.album, old.title, old.genre
+                    );
                 END;
 
                 CREATE TRIGGER tracks_au AFTER UPDATE ON tracks BEGIN
-                    INSERT INTO tracks_fts(tracks_fts, rowid, path, artist, album, title, genre)
-                    VALUES ('delete', old.rowid, old.path, old.artist, old.album, old.title, old.genre);
-                    INSERT INTO tracks_fts(rowid, path, artist, album, title, genre)
-                    VALUES (new.rowid, new.path, new.artist, new.album, new.title, new.genre);
+                    INSERT INTO tracks_fts(
+                        tracks_fts, rowid, path, artist, album, title, genre
+                    ) VALUES (
+                        'delete', old.rowid, old.path, old.artist,
+                        old.album, old.title, old.genre
+                    );
+                    INSERT INTO tracks_fts(
+                        rowid, path, artist, album, title, genre
+                    ) VALUES (
+                        new.rowid, new.path, new.artist,
+                        new.album, new.title, new.genre
+                    );
                 END;
             """)
 
