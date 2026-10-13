@@ -3,6 +3,10 @@
 ## Current Branch
 `main` (feature/13-audio-visualizer-v2 merged 2026-10-13)
 
+**Note:** staying on `main` for now — the next feature branch
+(`feature/14-metadata-display`) will be cut from `main` when work resumes. See
+"Next Steps" below for the recorded plan.
+
 ## Current State
 - 230 tests pass, ruff clean
 - Release counter: 1/3 features since v0.2.0 (v0.3.0 due after 2 more merges)
@@ -58,7 +62,16 @@ Migrated from ListView to DataTable with full playback integration.
 2. **ffmpeg decode pipeline** — needed for local file visualization
 
 ## Next Steps (When Resuming)
-1. Implement actual audio visualizer (waveform/spectrum/VU meter ASCII art)
-2. Build ffmpeg decode pipeline for local files
-3. Integrate visualizer into NowPlaying widget
-4. More FTS richness — ranking display, search result highlighting
+Next feature: audio visualization / richer metadata display. Recorded recommendation:
+
+1. **feature/14-metadata-display (start here — cheap, high impact, all data already in
+   the SQLite index):** show richer metadata in NowPlaying (album/year/genre/track#) and
+   consider an album-grouped view in the DataTable. No audio decode pipeline needed.
+2. **Spike: mpv real-time audio pipeline (stretch goal).** The v1 visualizer was abandoned
+   because ffmpeg decode latency made it unusable — do NOT repeat that path. Investigate
+   whether mpv can expose live audio level data (audio filter output / PCM pipe / built-in
+   volume-meter filter) with acceptable latency, for BOTH streams and local files.
+   Only build a VU meter / spectrum on top of it if the spike proves latency is fine.
+3. If the mpv spike fails: fall back to pre-computed offline waveforms for local files
+   (ffmpeg + numpy, cached per track in the metadata DB) — no real-time path for streams.
+4. Deferred: more FTS richness — ranking display, search result highlighting.
