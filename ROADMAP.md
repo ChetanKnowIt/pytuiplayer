@@ -225,11 +225,13 @@ UI polish identified during the architecture + UI review. 8 items, 9 new tests.
 
 **Next up:**
 
-### feature/13-audio-visualizer — **ACTIVE** (branch `feature/13-audio-visualizer-v2`)
+### feature/13-audio-visualizer-v2 — **DONE** (branch `feature/13-audio-visualizer-v2`, merged to `main` 2026-10-13)
+Metadata cache + FTS search + DataTable virtual scrolling + playback integration. The visualizer
+itself was NOT built in this branch — it became the sole scope of the next feature.
 Add real-time audio visualizer — render amplitude/frequency data as ASCII art in the TUI.
 Modes: waveform (time-domain), spectrum (frequency-domain via FFT), VU meter.
 
-**Status:** Metadata cache + FTS search + DataTable virtual scrolling + playback integration complete. Visualizer itself not yet started.
+**Status:** Merged to main 2026-10-13. Metadata cache + FTS search + DataTable virtual scrolling + playback integration complete. 230 tests pass. Visualizer itself not yet started — will be the next feature branch.
 
 **New Module:**
 - `src/pytuiplayer/metadata_index.py` — MetadataIndex class with SQLite cache + FTS5 full-text search
