@@ -9,7 +9,6 @@ directly (no live mpv / network).
 """
 
 import asyncio
-from pathlib import Path
 
 from pytuiplayer.history import HistoryTracker
 from pytuiplayer.tui_app import MusicPlayerApp

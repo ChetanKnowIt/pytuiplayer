@@ -91,6 +91,7 @@ class FakeList:
     def __init__(self):
         self.items = []
         self.index = None
+        self.ordered_columns = []
 
     def clear(self):
         self.items.clear()
@@ -98,9 +99,9 @@ class FakeList:
     def add_row(self, *values, key=None):
         self.items.append(values)
 
-    def add_row(self, *values, key=None):
-        self.items.append(values)
-
+    def add_columns(self, *labels):
+        for label in labels:
+            self.ordered_columns.append(label)
 
     async def mount(self, *items):
         self.items.extend(items)
@@ -349,8 +350,8 @@ def test_load_m3u_handles_aiofiles_and_sync_fallback(tmp_path: Path, monkeypatch
     app.query_one = lambda *a, **k: fake
     asyncio.run(app.load_m3u(playlist))
 
-    assert len(fake.items) == 1
-    assert fake.items[0].data["meta"] == "Artist A - Title A"
+    assert len(app.local_items) == 1
+    assert list(app.local_items.values())[0]["meta"] == "Artist A - Title A"
 
     # --- async path: only meaningful when aiofiles is actually installed ---
     try:

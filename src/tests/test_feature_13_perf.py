@@ -55,6 +55,7 @@ class _FakeListView:
         self.children = []
         self.index = None
         self._mount_count = 0
+        self.ordered_columns = []
 
     async def mount(self, *items):
         self.children.extend(items)
@@ -68,6 +69,10 @@ class _FakeListView:
 
     def add_row(self, *values, key=None):
         self.children.append(values)
+
+    def add_columns(self, *labels):
+        for label in labels:
+            self.ordered_columns.append(label)
 
 
 class TestCacheLookupPerformance:

@@ -37,15 +37,16 @@ from textual.widgets import (
     Footer,
     Header,
     Input,
-    Label,
-    ListItem,
     ListView,
     RadioButton,
     RadioSet,
     Static,
 )
 
+from pytuiplayer.logging_config import get_logger
 from pytuiplayer.widgets import NowPlaying, VolumeIndicator
+
+logger = get_logger("screens")
 
 
 class ModeScreen(Screen):
@@ -174,6 +175,8 @@ class LocalScreen(ModeScreen):
         local_list.border_title = "Local Music"
         local_list.cursor_type = "row"
         local_list.zebra_stripes = True
+        if not local_list.ordered_columns:
+            local_list.add_columns("Track")
         # Defer local file loading to avoid race condition with M3U loading.
         self._pending_local_load = self.set_timer(0.1, self._load_local)
         # Debounce timer for search input (None = no pending search)
@@ -186,10 +189,11 @@ class LocalScreen(ModeScreen):
         """Load local files. Status messages handled by load_local_files itself."""
         try:
             await self.app.playlist_loader.load_local_files(Path(self._default_music_dir()))
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to load local files: %s", exc, exc_info=True)
             try:
                 loading = self.app.query_one("#loading-status", Static)
-                loading.update("❌ Error loading files")
+                loading.update(f"❌ Error loading files: {type(exc).__name__}: {exc}")
             except Exception:
                 pass
 
@@ -211,10 +215,13 @@ class LocalScreen(ModeScreen):
     async def _run_debounced_search(self) -> None:
         """Called after debounce timer fires — execute the actual search."""
         self._search_pending = None
-        search_input = self.query_one("#search-input", Input)
-        query = search_input.value.lower().strip()
-        local_list = self.query_one("#local-list", DataTable)
-        await self._filter_local_list(local_list, query)
+        try:
+            search_input = self.query_one("#search-input", Input)
+            query = search_input.value.lower().strip()
+            local_list = self.query_one("#local-list", DataTable)
+            await self._filter_local_list(local_list, query)
+        except Exception as exc:
+            logger.warning("Search failed: %s", exc, exc_info=True)
 
     @on(Input.Submitted, "#search-input")
     async def on_search_submitted(self, event: Input.Submitted) -> None:
@@ -283,71 +290,78 @@ class LocalScreen(ModeScreen):
         Optimized: query result cache — caches matching item lists by query string
         so backspace/re-type doesn't re-run FTS.
         """
-        import asyncio
+        try:
+            from pytuiplayer.utils import fmt_mmss
 
-        from pytuiplayer.utils import fmt_mmss
+            all_items = getattr(self.app, "local_items", {})
+            if not all_items:
+                return
 
-        all_items = getattr(self.app, "local_items", {})
-        if not all_items:
-            return
+            # Normalize query (lowercase, strip)
+            query = query.lower().strip() if query else ""
 
-        # Normalize query (lowercase, strip)
-        query = query.lower().strip() if query else ""
-
-        # Query result cache (cleared when local_items changes)
-        if not hasattr(self, '_query_cache'):
-            self._query_cache = {}
-            self._cache_items_id = id(all_items)
-        elif id(all_items) != self._cache_items_id:
-            # local_items was reset — clear cache
-            self._query_cache.clear()
-            self._cache_items_id = id(all_items)
-
-        # Determine which items to show
-        if not query:
-            items_to_show = list(all_items.values())
-        elif query in self._query_cache:
-            # Cache hit — reuse previous results
-            items_to_show = self._query_cache[query]
-        else:
-            # Check if any cached query is a prefix of current (filter from it)
-            items_to_show = None
-            for cached_query, cached_results in sorted(self._query_cache.items(), key=lambda x: -len(x[0])):
-                if query.startswith(cached_query) and len(cached_results) < len(all_items):
-                    # Filter from cached results (smaller set, no FTS needed)
-                    items_to_show = [
-                        item_data for item_data in cached_results
-                        if query in str(item_data.get("title", "") if isinstance(item_data, dict) else getattr(item_data, "title", "")).lower()
-                    ]
-                    break
-
-            if items_to_show is None:
-                # Full search
-                items_to_show = self._resolve_search_results(query, all_items)
-
-            # Cache results (limit cache size)
-            if len(self._query_cache) > 50:
+            # Query result cache (cleared when local_items changes)
+            if not hasattr(self, '_query_cache'):
+                self._query_cache = {}
+                self._cache_items_id = id(all_items)
+            elif id(all_items) != self._cache_items_id:
+                # local_items was reset — clear cache
                 self._query_cache.clear()
-            self._query_cache[query] = items_to_show
+                self._cache_items_id = id(all_items)
 
-        # Clear table and rebuild
-        local_list.clear()
-
-        # Add rows in chunks (DataTable virtual scrolling makes this instant)
-        for item_data in items_to_show:
-            if isinstance(item_data, dict):
-                title = item_data.get("title", "")
-                duration = item_data.get("duration")
-                source = item_data.get("source", "")
+            # Determine which items to show
+            if not query:
+                items_to_show = list(all_items.values())
+            elif query in self._query_cache:
+                # Cache hit — reuse previous results
+                items_to_show = self._query_cache[query]
             else:
-                title = getattr(item_data, "title", "")
-                duration = getattr(item_data, "duration", None)
-                source = getattr(item_data, "source", "")
+                # Check if any cached query is a prefix of current (filter from it)
+                items_to_show = None
+                for cached_query, cached_results in sorted(self._query_cache.items(), key=lambda x: -len(x[0])):
+                    if query.startswith(cached_query) and len(cached_results) < len(all_items):
+                        # Filter from cached results (smaller set, no FTS needed)
+                        items_to_show = [
+                            item_data for item_data in cached_results
+                            if query in str(item_data.get("title", "") if isinstance(item_data, dict) else getattr(item_data, "title", "")).lower()
+                        ]
+                        break
 
-            duration_str = fmt_mmss(duration) if duration is not None else ""
-            if item_data.get("missing"):
-                title = f"⚠ {title} (missing)"
+                if items_to_show is None:
+                    # Full search
+                    items_to_show = self._resolve_search_results(query, all_items)
 
-            # Use source path as row key for stable identification
-            row_key = str(source) if source else str(id(item_data))
-            local_list.add_row(title, duration_str, key=row_key)
+                # Cache results (limit cache size)
+                if len(self._query_cache) > 50:
+                    self._query_cache.clear()
+                self._query_cache[query] = items_to_show
+
+            # Clear table and rebuild
+            local_list.clear()
+
+            # Ensure columns exist
+            if not local_list.ordered_columns:
+                local_list.add_columns("Track")
+
+            # Add rows (single column: combined title + duration display)
+            for item_data in items_to_show:
+                if isinstance(item_data, dict):
+                    title = item_data.get("title", "")
+                    duration = item_data.get("duration")
+                    source = item_data.get("source", "")
+                else:
+                    title = getattr(item_data, "title", "")
+                    duration = getattr(item_data, "duration", None)
+                    source = getattr(item_data, "source", "")
+
+                duration_str = fmt_mmss(duration) if duration is not None else ""
+                if item_data.get("missing"):
+                    title = f"⚠ {title} (missing)"
+
+                # Combine into single display string (1 column)
+                display = f"{title:<40} {duration_str}" if duration_str else title
+                # Use source path as row key for stable identification
+                row_key = str(source) if source else str(id(item_data))
+                local_list.add_row(display, key=row_key)
+        except Exception as exc:
+            logger.warning("Filter local list failed: %s", exc, exc_info=True)

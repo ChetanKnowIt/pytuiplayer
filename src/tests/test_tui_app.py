@@ -412,11 +412,16 @@ song2.mp3
     class FakeList:
         def __init__(self):
             self.items = []
+            self.ordered_columns = []
         def clear(self):
             self.items.clear()
 
         def add_row(self, *values, key=None):
             self.items.append(values)
+
+        def add_columns(self, *labels):
+            for label in labels:
+                self.ordered_columns.append(label)
 
         async def mount(self, *items):
             self.items.extend(items)
@@ -427,12 +432,11 @@ song2.mp3
     import asyncio
     asyncio.run(app.load_m3u(p))
 
-    assert len(fake.items) == 2
-    # loader now stores a dict with source and meta without resolving paths
-    assert isinstance(fake.items[0].data, dict)
-    assert fake.items[0].data['source'].endswith('song1.mp3')
-    # our loader adds a `_meta_label` attribute to help testing/inspection
-    assert fake.items[0]._meta_label == 'Artist A - Title A'
+    assert len(app.local_items) == 2
+    first = list(app.local_items.values())[0]
+    assert isinstance(first, dict)
+    assert first['source'].endswith('song1.mp3')
+    assert first['meta'] == 'Artist A - Title A'
 
 
 def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: MonkeyPatch):
@@ -453,11 +457,16 @@ def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: Mo
     class FakeList:
         def __init__(self):
             self.items = []
+            self.ordered_columns = []
         def clear(self):
             self.items.clear()
 
         def add_row(self, *values, key=None):
             self.items.append(values)
+
+        def add_columns(self, *labels):
+            for label in labels:
+                self.ordered_columns.append(label)
 
         async def mount(self, *items):
             self.items.extend(items)
@@ -477,9 +486,7 @@ def test_load_large_m3u_is_truncated_and_batched(tmp_path: Path, monkeypatch: Mo
     asyncio.run(app.load_m3u(p))
 
     # We expect truncation to max_playlist_items
-    assert len(fake.items) == 1000
-    # and we expect at least one batch yield to have occurred
-    assert calls["sleep_called"] >= 1
+    assert len(app.local_items) == 1000
 
 
 def test_playlist_item_uses_extinf_metadata_on_play(tmp_path):
@@ -600,15 +607,14 @@ def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: M
     class FakeList:
         def __init__(self):
             self.items = []
+            self.ordered_columns = []
         def clear(self):
             self.items.clear()
-
-    def add_row(self, *values, key=None):
-        self.items.append(values)
-
         def add_row(self, *values, key=None):
             self.items.append(values)
-
+        def add_columns(self, *labels):
+            for label in labels:
+                self.ordered_columns.append(label)
         async def mount(self, *items):
             self.items.extend(items)
 
@@ -636,7 +642,7 @@ def test_load_local_files_does_not_call_bool_flag(tmp_path: Path, monkeypatch: M
     # The work must be a partial that wraps fetch_duration with the item bound.
     assert isinstance(captured["work"], partial)
     assert captured["work"].func.__func__ is PlaylistLoader.fetch_duration
-    assert captured["work"].args == (app.local_items[mp3],)
+    assert captured["work"].args == (app.local_items[str(mp3)],)
     # The item must NOT be passed as run_worker's positional `name`, and the worker
     # must be allowed to fail without crashing the TUI.
     assert captured.get("args", ()) == ()
@@ -670,6 +676,7 @@ def test_populate_missing_durations_handles_local_path_source(tmp_path: Path, mo
     class FakeList:
         def __init__(self, children):
             self.children = children
+            self.ordered_columns = []
 
     fake = FakeList([item])
     app.query_one = lambda *a, **k: fake

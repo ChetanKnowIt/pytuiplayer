@@ -2,11 +2,9 @@
 
 import asyncio
 import time
-from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
 
-import pytest
-from textual.widgets import Label, ListItem, ListView, Static
+from textual.widgets import Label, ListItem
 
 from pytuiplayer.metadata_index import MetadataIndex
 from pytuiplayer.screens import LocalScreen
@@ -19,6 +17,7 @@ class _FakeListView:
         self.children = []
         self.index = None
         self._mount_count = 0
+        self.items = []
 
     async def mount(self, *items):
         self.children.extend(items)
@@ -29,6 +28,9 @@ class _FakeListView:
 
     def clear(self):
         self.children.clear()
+
+    def add_row(self, *values, key=None):
+        self.items.append(values)
 
 
 def _make_screen_with_2000(tmp_path):

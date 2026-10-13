@@ -35,6 +35,7 @@ Terminal-based music player built with Python 3.12, Textual (TUI framework), and
 | `src/tests/test_feature_02_design_flows.py` | feature/02 acceptance tests (6 tests) |
 | `src/tests/test_feature_12_ui_polish.py` | feature/12 UI polish tests (marquee, connecting state, ~/Music default, total duration) |
 | `src/tests/test_metadata_index.py` | feature/13 metadata index tests (cache, FTS search, staleness, migration) |
+| `src/tests/test_data_table_playback.py` | DataTable row selection + playback integration tests (10 tests) |
 | `src/tests/test_tui_app.py` | App actions, loaders, visibility, regressions (21 tests) |
 | `scripts/` | Dev scripts and manual test scripts |
 | `scripts/update_testsuite_db.py` | Rebuild/enrich `testsuite.db` (files + backlog mirror) |
@@ -113,11 +114,12 @@ This keeps `tui_app.py` focused on app lifecycle, event routing, and UI update p
 - `LocalScreen.on_mount`: Syncs shared widget state, loads local files via `set_timer(0.1, ...)`. Timer is stored in `self._pending_local_load` so it can be cancelled when an M3U is loaded.
 - `on_radio_set_changed()`: Mode switching via `switch_screen(RadioScreen)` / `switch_screen(LocalScreen)`. Clears `_stream_source`, `currently_playing`, and `current_title` to prevent stale metadata.
 - `on_button_pressed()`: Play/Pause/Stop/Prev/Next button handlers
-- `on_list_view_selected()`: Station/local list selection
-- `on_directory_tree_file_selected()`: File browser selection (JSON/M3U/MP3). For M3U files, cancels the pending local-file scan before loading.
+- `on_list_view_selected()`: Station list selection (radio mode)
+- `on_data_table_row_selected()`: Local list row selection (local mode — DataTable)
+- `on_directory_tree_file_selected()`: File browser selection (JSON/M3U/MP3)
 - Polling: `update_progress()` (0.5s), `metadata_poller.refresh()` (1.0s)
 - Marquee: `NowPlaying._tick()` (0.5s interval)
-- Search: `LocalScreen._filter_local_list()` rebuilds ListView items from stored data. Uses `remove_children()` + `asyncio.sleep(0)` yields to avoid Textual timing bugs.
+- Search: `LocalScreen._filter_local_list()` rebuilds DataTable rows from stored data. Uses `clear()` + `add_row()` with single-column display string.
 
 ### CSS
 

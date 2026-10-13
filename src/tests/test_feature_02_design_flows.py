@@ -180,15 +180,14 @@ def test_item_data_unified_typeddict(tmp_path):
         def __init__(self):
             self.items = []
             self.index = None
+            self.ordered_columns = []
         def clear(self):
             self.items.clear()
-
-    def add_row(self, *values, key=None):
-        self.items.append(values)
-
-    def add_row(self, *values, key=None):
-        self.items.append(values)
-
+        def add_row(self, *values, key=None):
+            self.items.append(values)
+        def add_columns(self, *labels):
+            for label in labels:
+                self.ordered_columns.append(label)
         async def mount(self, *items):
             self.items.extend(items)
 
@@ -202,16 +201,17 @@ def test_item_data_unified_typeddict(tmp_path):
 
     asyncio.run(app.load_local_files(tmp_path))
 
-    assert len(fake_list.items) >= 1
-    item = fake_list.items[0]
-    assert isinstance(item.data, dict)
+    # app.local_items holds ItemData dicts keyed by source (Path for local)
+    assert len(app.local_items) >= 1
+    item = list(app.local_items.values())[0]
+    assert isinstance(item, dict)
     # ItemData keys present
-    assert "source" in item.data
-    assert "title" in item.data
-    assert "duration" in item.data
+    assert "source" in item
+    assert "title" in item
+    assert "duration" in item
     # source should be the Path, title should be the filename
-    assert item.data["title"] == "test_song.mp3"
-    assert item.data["duration"] is None
+    assert item["title"] == "test_song.mp3"
+    assert item["duration"] is None
 
     # --- Test 2: load_m3u emits ItemData ---
     m3u_file = tmp_path / "playlist.m3u"
@@ -222,17 +222,18 @@ def test_item_data_unified_typeddict(tmp_path):
 
     asyncio.run(app.load_m3u(m3u_file))
 
-    assert len(fake_list2.items) >= 1
-    item2 = fake_list2.items[0]
-    assert isinstance(item2.data, dict)
+    # app.local_items holds ItemData dicts keyed by source (str for M3U)
+    assert len(app.local_items) >= 1
+    item2 = list(app.local_items.values())[0]
+    assert isinstance(item2, dict)
     # All ItemData keys present
-    assert "source" in item2.data
-    assert "title" in item2.data
-    assert "duration" in item2.data
-    assert "meta" in item2.data
+    assert "source" in item2
+    assert "title" in item2
+    assert "duration" in item2
+    assert "meta" in item2
     # Verify EXTINF metadata is parsed
-    assert item2.data["duration"] == 213
-    assert item2.data["meta"] == "Song Title"
+    assert item2["duration"] == 213
+    assert item2["meta"] == "Song Title"
 
 
 # ---------------------------------------------------------------------------

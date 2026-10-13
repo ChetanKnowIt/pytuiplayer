@@ -9,7 +9,6 @@ Pattern: inject ``FakeMPVPlayer`` via ``app.mpv = ...``, stub ``query_one`` and
 """
 
 import asyncio
-from pathlib import Path
 from types import SimpleNamespace
 
 from pytuiplayer.playlist import PlaylistNavigator
@@ -54,6 +53,7 @@ class FakeListView:
     def __init__(self, items):
         self._items = items
         self.index = 0
+        self.cursor_row = 0  # DataTable API
 
     @property
     def children(self):
@@ -193,12 +193,14 @@ def test_play_next_repeat_one_replays_same_local_index(tmp_path):
         mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
     items = [FakeListItem({"source": str(tmp_path / f"f{i}.mp3"), "title": str(i)}) for i in range(4)]
     local_list = FakeListView(items)
-    local_list.index = 1
+    local_list.cursor_row = 1
     app.query_one = lambda *a, **k: local_list
+    # Populate local_items (DataTable reads from here, not the widget)
+    app.local_items = {str(tmp_path / f"f{i}.mp3"): item.data for i, item in enumerate(items)}
 
     asyncio.run(app.playlist_navigator.play_next())
     assert app.mpv.calls[-1] == ("play", str(tmp_path / "f1.mp3"))
-    assert local_list.index == 1
+    assert local_list.cursor_row == 1
 
 
 def test_play_next_repeat_all_wraps_local(tmp_path):
@@ -210,12 +212,13 @@ def test_play_next_repeat_all_wraps_local(tmp_path):
         mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
     items = [FakeListItem({"source": str(tmp_path / f"f{i}.mp3"), "title": str(i)}) for i in range(3)]
     local_list = FakeListView(items)
-    local_list.index = 2
+    local_list.cursor_row = 2
     app.query_one = lambda *a, **k: local_list
+    app.local_items = {str(tmp_path / f"f{i}.mp3"): item.data for i, item in enumerate(items)}
 
     asyncio.run(app.playlist_navigator.play_next())
     assert app.mpv.calls[-1] == ("play", str(tmp_path / "f0.mp3"))
-    assert local_list.index == 0
+    assert local_list.cursor_row == 0
 
 
 def test_play_next_sequential_off_stops_at_end_local():
@@ -223,8 +226,9 @@ def test_play_next_sequential_off_stops_at_end_local():
     app.repeat = "off"
     items = [FakeListItem({"source": f"/f{i}.mp3", "title": str(i)}) for i in range(3)]
     local_list = FakeListView(items)
-    local_list.index = 2
+    local_list.cursor_row = 2
     app.query_one = lambda *a, **k: local_list
+    app.local_items = {f"/f{i}.mp3": item.data for i, item in enumerate(items)}
 
     asyncio.run(app.playlist_navigator.play_next())
     assert ("play", "/f0.mp3") not in app.mpv.calls
@@ -241,14 +245,15 @@ def test_play_next_shuffle_picks_different_local(tmp_path):
         mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
     items = [FakeListItem({"source": str(tmp_path / f"f{i}.mp3"), "title": str(i)}) for i in range(4)]
     local_list = FakeListView(items)
-    local_list.index = 0
+    local_list.cursor_row = 0
     app.query_one = lambda *a, **k: local_list
+    app.local_items = {str(tmp_path / f"f{i}.mp3"): item.data for i, item in enumerate(items)}
     # Deterministic: randrange(4) -> 2 (different from current 0).
     app.playlist_navigator._randrange = lambda n: 2
 
     asyncio.run(app.playlist_navigator.play_next())
     assert app.mpv.calls[-1] == ("play", str(tmp_path / "f2.mp3"))
-    assert local_list.index == 2
+    assert local_list.cursor_row == 2
 
 
 def test_play_previous_sequential_off_stops_at_start_radio():

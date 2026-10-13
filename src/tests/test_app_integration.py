@@ -1,4 +1,3 @@
-from pathlib import Path
 from textual.widgets import Label, ListItem
 
 from pytuiplayer.tui_app import MusicPlayerApp
@@ -36,6 +35,11 @@ def test_app_shows_nowplaying_during_play_and_progress(tmp_path):
     class FakeList:
         def __init__(self, items):
             self.items = items
+            self.ordered_columns = []
+
+    def add_columns(self, *labels):
+        for label in labels:
+            self.ordered_columns.append(label)
 
     fake_list = FakeList([item])
 

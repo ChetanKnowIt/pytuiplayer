@@ -11,7 +11,7 @@ from functools import partial
 from pathlib import Path
 
 from mutagen import File as MutagenFile
-from textual.widgets import DataTable, Label, ListItem, ListView, Static
+from textual.widgets import DataTable, Label, ListView, Static
 
 from pytuiplayer.logging_config import get_logger
 from pytuiplayer.profiling import profile_async
@@ -99,6 +99,10 @@ class PlaylistLoader:
         local_list.clear()
         self.app.local_items = {}
 
+        # Ensure columns exist (DataTable requires columns before add_row)
+        if not local_list.ordered_columns:
+            local_list.add_columns("Track")
+
         max_items = self.app.max_playlist_items or float("inf")
         count = 0
         cached_count = 0
@@ -146,7 +150,7 @@ class PlaylistLoader:
             duration_str = fmt_mmss(duration) if duration is not None else "--:--"
             display = f"{item_data['title']:<40} {duration_str}"
             local_list.add_row(display, key=str(file))
-            self.app.local_items[file] = item_data
+            self.app.local_items[str(file)] = item_data
             count += 1
 
         # Phase 4: Show status only if some items need background work
@@ -183,13 +187,15 @@ class PlaylistLoader:
         local_list.clear()
         self.app.local_items = {}
 
+        # Ensure columns exist (DataTable requires columns before add_row)
+        if not local_list.ordered_columns:
+            local_list.add_columns("Track")
+
         base_dir = path.parent
         max_items = self.app.max_playlist_items or float("inf")
 
         # Parse all lines to data (in thread for mounted drives)
         items_data = []
-        pending_meta: str | None = None
-        pending_dur: int | None = None
 
         def parse_m3u():
             data = []
@@ -282,7 +288,8 @@ class PlaylistLoader:
 
             self.app.local_items[source] = item_data
 
-            duration_str = fmt_mmss(item_data.get("duration")) if item_data.get("duration") is not None else ""
+            dur = item_data.get("duration")
+            duration_str = fmt_mmss(dur) if dur is not None else ""
             if item_data.get("missing"):
                 display = f"{item_data['title']:<40} ⚠ {duration_str} (missing)"
             else:

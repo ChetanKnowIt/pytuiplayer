@@ -443,6 +443,33 @@ class MusicPlayerApp(App):
     # === Event handlers ===
 
     @profile_async
+    async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Handle row selection in the local-list DataTable."""
+        if event.data_table.id != "local-list":
+            return
+        if self.option_mode != "local":
+            return
+        # RowKey has a .value attribute containing the string key
+        row_key = event.row_key.value if hasattr(event.row_key, 'value') else str(event.row_key)
+        # Find the item_data by source path (row_key)
+        item_data = self.local_items.get(row_key)
+        if item_data is None:
+            # Try matching by stringified source
+            for data in self.local_items.values():
+                if str(data.get("source")) == row_key:
+                    item_data = data
+                    break
+        if item_data:
+            try:
+                self.play_local(item_data)
+            except Exception as exc:
+                logger.warning("play_local failed for %s: %s", row_key, exc, exc_info=True)
+                try:
+                    self.update_now_playing(f"Failed to play: {item_data.get('title', row_key)}", "", "⚠")
+                except Exception:
+                    pass
+
+    @profile_async
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         list_id = event.list_view.id
         item = event.item
@@ -684,13 +711,12 @@ class MusicPlayerApp(App):
                 pass
 
     def _tag_playing_item_for_source(self, source_str: str) -> None:
-        """Find the list item whose data.source matches source_str and tag it."""
+        """Find the row whose key matches source_str and move cursor to it."""
         try:
             local_list = self.query_one("#local-list", DataTable)
-            # Find the row with matching source
-            for row_key in local_list.rows:
-                if row_key == source_str:
-                    local_list.cursor_row = local_list.rows.index(row_key)
+            for row in local_list.ordered_rows:
+                if str(row.key) == source_str:
+                    local_list.cursor_row = local_list.ordered_rows.index(row)
                     return
         except Exception:
             logger.debug("_tag_playing_item_for_source failed", exc_info=True)
@@ -698,6 +724,17 @@ class MusicPlayerApp(App):
     @profile
     def play_local(self, path):
         """Play a local file or URL."""
+        try:
+            self._play_local_impl(path)
+        except Exception as exc:
+            logger.warning("play_local failed for %s: %s", path, exc, exc_info=True)
+            try:
+                self.update_now_playing("Failed to play file", "", "⚠")
+            except Exception:
+                logger.debug("update_now_playing failed", exc_info=True)
+
+    def _play_local_impl(self, path):
+        """Internal implementation of play_local."""
         source = None
         meta_label = None
         if isinstance(path, dict):

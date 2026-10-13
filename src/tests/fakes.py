@@ -1,6 +1,5 @@
 """Shared test fakes for DataTable-based local list."""
 
-from textual.widgets import Label
 
 
 class FakeDataTable:

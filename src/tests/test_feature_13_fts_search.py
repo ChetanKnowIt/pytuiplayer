@@ -139,6 +139,7 @@ class _FakeListView:
         self._mount_calls = []
         self._clear_calls = 0
         self.items = []
+        self.ordered_columns = []
 
     async def mount(self, *items):
         self.children.extend(items)
@@ -156,6 +157,10 @@ class _FakeListView:
         # Store as object with .data attribute for test compatibility
         item = type('Row', (), {'data': values[0] if values else None})()
         self.items.append(item)
+
+    def add_columns(self, *labels):
+        for label in labels:
+            self.ordered_columns.append(label)
 
 
 def _make_fake_list_view():
@@ -181,8 +186,8 @@ class TestFTSSearchFiltersByArtist:
 
         titles = [item.data for item in fake_lv.items]
         assert len(titles) == 2
-        assert "Alive" in titles
-        assert "Chandelier" in titles
+        assert any("Alive" in t for t in titles)
+        assert any("Chandelier" in t for t in titles)
 
     def test_search_by_artist_excludes_non_matching(self, app_with_fts):
         """Searching 'Queen' excludes Sia tracks."""
@@ -194,7 +199,7 @@ class TestFTSSearchFiltersByArtist:
 
         titles = [item.data for item in fake_lv.items]
         assert len(titles) == 1
-        assert "Bohemian Rhapsody" in titles
+        assert any("Bohemian Rhapsody" in t for t in titles)
 
 
 class TestFTSSearchFiltersByAlbum:
@@ -210,7 +215,7 @@ class TestFTSSearchFiltersByAlbum:
 
         titles = [item.data for item in fake_lv.items]
         assert len(titles) == 1
-        assert "Chandelier" in titles
+        assert any("Chandelier" in t for t in titles)
 
 
 class TestFTSSearchFiltersByGenre:
@@ -226,7 +231,7 @@ class TestFTSSearchFiltersByGenre:
 
         titles = [item.data for item in fake_lv.items]
         assert len(titles) == 1
-        assert "Bohemian Rhapsody" in titles
+        assert any("Bohemian Rhapsody" in t for t in titles)
 
     def test_search_by_genre_pop(self, app_with_fts):
         """Searching 'Pop' returns pop tracks."""
@@ -238,8 +243,8 @@ class TestFTSSearchFiltersByGenre:
 
         titles = [item.data for item in fake_lv.items]
         assert len(titles) == 2
-        assert "Alive" in titles
-        assert "Chandelier" in titles
+        assert any("Alive" in t for t in titles)
+        assert any("Chandelier" in t for t in titles)
 
 
 class TestFTSSearchCaseInsensitive:
@@ -308,7 +313,7 @@ class TestFTSSearchIntersectsWithLoadedItems:
         titles = [item.data for item in fake_lv.items]
         # Only the 2 Sia tracks — unknown song is excluded
         assert len(titles) == 2
-        assert "Unknown Song" not in titles
+        assert not any("Unknown Song" in t for t in titles)
 
 
 class TestFTSSearchNoMatch:
@@ -357,7 +362,7 @@ class TestFallbackTitleScan:
 
         titles = [item.data for item in fake_lv.items]
         assert len(titles) == 1
-        assert "Bohemian Rhapsody" in titles
+        assert any("Bohemian Rhapsody" in t for t in titles)
 
     def test_fallback_is_case_insensitive(self, app_no_index):
         """Fallback search is case-insensitive."""

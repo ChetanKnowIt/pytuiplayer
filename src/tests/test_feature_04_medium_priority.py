@@ -42,6 +42,7 @@ class FakeList:
     def __init__(self):
         self.items = []
         self.index = None
+        self.ordered_columns = []
 
     def clear(self):
         self.items.clear()
@@ -49,9 +50,9 @@ class FakeList:
     def add_row(self, *values, key=None):
         self.items.append(values)
 
-    def add_row(self, *values, key=None):
-        self.items.append(values)
-
+    def add_columns(self, *labels):
+        for label in labels:
+            self.ordered_columns.append(label)
 
     async def mount(self, *items):
         self.items.extend(items)
@@ -83,16 +84,16 @@ def test_load_local_files_recursive(tmp_path):
     asyncio.run(app.load_local_files(tmp_path))
 
     # All 4 nested mp3s found (top-level + 3 levels deep); the .txt is ignored.
-    assert len(fake.items) == 4
-    sources = {item.data["source"] for item in fake.items}
+    assert len(app.local_items) == 4
+    sources = {item["source"] for item in app.local_items.values()}
     assert (tmp_path / "a.mp3") in sources
     assert (tmp_path / "sub1" / "b.mp3") in sources
     assert (tmp_path / "sub1" / "sub2" / "c.mp3") in sources
     assert (tmp_path / "sub1" / "sub2" / "deep" / "d.mp3") in sources
     # Every item emits the unified ItemData shape.
-    for item in fake.items:
-        assert item.data["title"].endswith(".mp3")
-        assert item.data["duration"] is None
+    for item in app.local_items.values():
+        assert item["title"].endswith(".mp3")
+        assert item["duration"] is None
 
 
 def test_load_local_files_recursive_respects_max_playlist_items(tmp_path):
@@ -113,13 +114,13 @@ def test_load_local_files_recursive_respects_max_playlist_items(tmp_path):
     asyncio.run(app.load_local_files(tmp_path))
 
     # Only the first 3 files are loaded (cap honored), even across directories.
-    assert len(fake.items) == 3
-    for item in fake.items:
-        assert isinstance(item.data["source"], Path)
+    assert len(app.local_items) == 3
+    for item in app.local_items.values():
+        assert isinstance(item["source"], Path)
 
 
 def test_load_local_files_recursive_batched_mounting(tmp_path):
-    """Items are mounted in batches (playlist_batch_size), not one giant await."""
+    """Items are added to the DataTable (virtual scrolling makes batching unnecessary)."""
     app = _make_app()
     app.max_playlist_items = 50
     app.playlist_batch_size = 4
@@ -127,22 +128,13 @@ def test_load_local_files_recursive_batched_mounting(tmp_path):
     for i in range(10):
         (tmp_path / f"t{i}.mp3").write_text("")
 
-    # Capture the sizes of each mount batch.
-    batches = []
-
-    class RecordingList(FakeList):
-        async def mount(self, *items):
-            batches.append(len(items))
-            self.items.extend(items)
-
-    fake = RecordingList()
+    fake = FakeList()
     app.query_one = lambda *a, **k: fake
 
     asyncio.run(app.load_local_files(tmp_path))
 
-    assert len(fake.items) == 10
-    # 10 items with batch_size 4 -> batches of [4, 4, 2]
-    assert batches == [4, 4, 2]
+    # DataTable virtual scrolling = instant, no batching needed
+    assert len(app.local_items) == 10
 
 
 def test_load_local_files_top_level_still_works(tmp_path):
@@ -156,8 +148,8 @@ def test_load_local_files_top_level_still_works(tmp_path):
 
     asyncio.run(app.load_local_files(tmp_path))
 
-    assert len(fake.items) == 2
-    assert {item.data["source"] for item in fake.items} == {
+    assert len(app.local_items) == 2
+    assert {item["source"] for item in app.local_items.values()} == {
         tmp_path / "x.mp3",
         tmp_path / "y.mp3",
     }
