@@ -6,11 +6,13 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help install sync test lint format build build-wheel build-sdist \
-        build-exe dist clean
+        build-exe dist clean run
 
 help:  ## Show available targets
 	@echo "pytuiplayer build pipeline"
 	@echo "  make install      Install deps (uv sync --dev)"
+	@echo "  make run          Launch the TUI (uv run pytuiplayer)"
+	@echo "  make debug        Launch the TUI with debug tracing (PYTUIP_DEBUG=1)"
 	@echo "  make test         Run pytest (also refreshes testsuite.db)"
 	@echo "  make lint         Run ruff check"
 	@echo "  make format       Run ruff format"
@@ -21,6 +23,12 @@ help:  ## Show available targets
 
 install sync:  ## Install project + dev dependencies
 	uv sync --dev
+
+run:  ## Launch the TUI (local dev run)
+	uv run pytuiplayer
+
+debug:  ## Launch the TUI with debug tracing enabled
+	PYTUIP_DEBUG=1 uv run pytuiplayer
 
 test:  ## Run the test suite (uv run pytest -q)
 	uv run pytest -q

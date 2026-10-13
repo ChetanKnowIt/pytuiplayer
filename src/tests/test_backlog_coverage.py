@@ -91,9 +91,17 @@ class FakeList:
     def __init__(self):
         self.items = []
         self.index = None
+        self.ordered_columns = []
 
     def clear(self):
         self.items.clear()
+
+    def add_row(self, *values, key=None):
+        self.items.append(values)
+
+    def add_columns(self, *labels):
+        for label in labels:
+            self.ordered_columns.append(label)
 
     async def mount(self, *items):
         self.items.extend(items)
@@ -163,20 +171,24 @@ def test_on_list_view_selected_station_mode():
     assert station_list.index == 0
 
 
-def test_on_list_view_selected_local_mode():
+def test_on_list_view_selected_local_mode(tmp_path):
     """#4 — selecting a local item triggers play_local (mpv.play with source)."""
     mpv = FakeMPV()
     app = _stub_app(MusicPlayerApp(), mpv=mpv)
     app.option_mode = "local"
 
-    item_data = {"source": "/tmp/song.mp3", "meta": "Artist - Track"}
+    # Create a real temp file
+    mp3 = tmp_path / "song.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
+    item_data = {"source": str(mp3), "meta": "Artist - Track"}
     event = types.SimpleNamespace(
         list_view=types.SimpleNamespace(id="local-list"),
         item=types.SimpleNamespace(data=item_data),
     )
     asyncio.run(app.on_list_view_selected(event))
 
-    assert ("play", "/tmp/song.mp3") in mpv.calls
+    assert ("play", str(mp3)) in mpv.calls
     assert app.current_title == "Artist - Track"
     assert app.currently_playing == "local"
 
@@ -282,7 +294,7 @@ def test_play_local_url_bypasses_file_checks():
     assert app.current_title == "My Stream"
 
 
-def test_play_local_failure_shows_error():
+def test_play_local_failure_shows_error(tmp_path):
     """#11 — when mpv.play raises, the UI is told playback failed."""
 
     class BoomMPV(FakeMPV):
@@ -295,7 +307,11 @@ def test_play_local_failure_shows_error():
     captured = []
     app.update_now_playing = lambda *a, **k: captured.append(a)
 
-    app.play_local(Path("/tmp/does-not-exist.mp3"))
+    # Create a real temp file so it passes the existence check
+    mp3 = tmp_path / "boom.mp3"
+    mp3.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
+    app.play_local(mp3)
 
     assert captured
     assert captured[0][0] == "Failed to play file"
@@ -334,8 +350,8 @@ def test_load_m3u_handles_aiofiles_and_sync_fallback(tmp_path: Path, monkeypatch
     app.query_one = lambda *a, **k: fake
     asyncio.run(app.load_m3u(playlist))
 
-    assert len(fake.items) == 1
-    assert fake.items[0].data["meta"] == "Artist A - Title A"
+    assert len(app.local_items) == 1
+    assert list(app.local_items.values())[0]["meta"] == "Artist A - Title A"
 
     # --- async path: only meaningful when aiofiles is actually installed ---
     try:

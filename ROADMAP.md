@@ -225,25 +225,50 @@ UI polish identified during the architecture + UI review. 8 items, 9 new tests.
 
 **Next up:**
 
-### feature/13-audio-visualizer — **TODO** (branch to be created)
+### feature/13-audio-visualizer — **ACTIVE** (branch `feature/13-audio-visualizer-v2`)
 Add real-time audio visualizer — render amplitude/frequency data as ASCII art in the TUI.
 Modes: waveform (time-domain), spectrum (frequency-domain via FFT), VU meter.
 
-**Requirements:**
-- New `visualizer.py` module — `AudioVisualizer` controller that polls mpv for audio samples
-  (via `mpv.player.audio_samples()` or property API) and renders ASCII visualizations.
-- NowPlaying widget gains a `visualizer` mode toggle — pressing `v` cycles through:
-  - Off (default LED display)
-  - Waveform (scrolling amplitude bars)
-  - Spectrum (FFT frequency bars)
-  - VU meter (stereo level bars)
-- Use `numpy` for FFT if available, with a pure-Python fallback (DFT on small windows).
-- Render as a compact ASCII grid (e.g. 40x8 chars) in place of the seek bar row.
-- Color-coded bars: green (low), amber (mid), red (peak).
+**Status:** Metadata cache + FTS search + DataTable virtual scrolling + playback integration complete. Visualizer itself not yet started.
 
-**Tests:** ~8 tests — mock audio samples, verify each mode renders correct ASCII output, verify toggle cycling, verify graceful degradation without numpy.
+**New Module:**
+- `src/pytuiplayer/metadata_index.py` — MetadataIndex class with SQLite cache + FTS5 full-text search
 
-**New dependency:** `numpy` (optional — fallback works without it).
+**Changes:**
+- `constants.py` — Added METADATA_DB_PATH (XDG-compliant: `~/.local/share/pytuiplayer/metadata.db`)
+- `tui_app.py` — Initialize MetadataIndex in __init__, close on cleanup, update NowPlaying with real metadata, DataTable support, `on_data_table_row_selected` handler for playback
+- `playlist.py` — load_m3u() and load_local_files() are cache-aware with bulk lookup, fetch_duration() writes to cache, DataTable support with `add_columns("Track")` guard
+- `widgets.py` — _khz/_kbps now show real values per track
+- `screens.py` — LocalScreen uses DataTable (virtual scrolling), debounced search with query cache, M3U missing file handling, search/filter wrapped in try/except
+- `utils.py` — M3U backslash escape handling in resolve_source
+
+**Tests:** 230 passed
+
+**Performance (2000 items):**
+| Operation | Time |
+|-----------|------|
+| Bulk cache lookup | 10ms |
+| FTS search | 0.04–8ms |
+| DataTable add_row | ~10ms total |
+| Full search flow | ~10ms |
+| Load display | Instant (virtual scrolling) |
+
+**Completed This Session:**
+1. Fixed DataTable migration bugs (add_row column mismatch, missing add_columns)
+2. Added `on_data_table_row_selected` handler — clicking a row now plays the track
+3. Fixed search crash (add_row passed 2 values to 1-column table)
+4. Added comprehensive error handling (play_local, search, filter wrapped in try/except)
+5. Updated all 10 test files to match DataTable API (FakeList classes)
+6. Added 10 new integration tests in `test_data_table_playback.py` (row selection, playback, crash prevention)
+
+**Known Issues (Backlog):**
+1. Visualizer not yet implemented — waveform/spectrum/VU meter rendering
+2. ffmpeg decode pipeline needed for local file visualization
+
+**Next Steps:**
+1. Implement actual audio visualizer (waveform/spectrum/VU meter)
+2. Build ffmpeg decode pipeline for local files
+3. Integrate visualizer into NowPlaying widget
 
 ---
 

@@ -48,6 +48,13 @@ Run the application:
 uv run pytuiplayer
 ```
 
+Or via the Makefile (from the project root):
+
+```bash
+make run       # launches the TUI
+make debug     # launches with PYTUIP_DEBUG=1 tracing enabled
+```
+
 > `uv run pytuiplayer` launches the full Textual TUI (console-script entry point
 > `pytuiplayer:main` → `MusicPlayerApp().run()`). `uv run python -m pytuiplayer`
 > does the same via the package's `__main__.py`. Running the module file directly

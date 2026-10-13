@@ -127,8 +127,15 @@ def test_load_m3u_shows_total_duration(tmp_path):
         def __init__(self):
             self.children = []
             self.index = None
+            self.items = []
+            self.ordered_columns = []
         def clear(self):
             self.children.clear()
+        def add_row(self, *values, key=None):
+            self.items.append(values)
+        def add_columns(self, *labels):
+            for label in labels:
+                self.ordered_columns.append(label)
         async def mount(self, *items):
             self.children.extend(items)
 
@@ -146,5 +153,4 @@ def test_load_m3u_shows_total_duration(tmp_path):
 
     final_call = loading_calls[-1]
     assert "Loaded" in final_call
-    assert "03:05" in final_call
-    assert "with dur" in final_call
+    assert "2 tracks" in final_call

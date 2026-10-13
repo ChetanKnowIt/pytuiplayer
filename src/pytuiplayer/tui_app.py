@@ -14,6 +14,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import (
     Button,
+    DataTable,
     DirectoryTree,
     Footer,
     Header,
@@ -21,17 +22,20 @@ from textual.widgets import (
     Label,
     ListItem,
     ListView,
+    Static,
 )
 
 from pytuiplayer.constants import (
     DEFAULT_PLAYLIST_BATCH_SIZE,
     ICON_ERR,
     MAX_PLAYLIST_ITEMS,
+    METADATA_DB_PATH,
 )
 from pytuiplayer.exporter import PlaylistExporter
 from pytuiplayer.history import HistoryTracker
 from pytuiplayer.logging_config import get_logger, setup_logging
 from pytuiplayer.metadata import MetadataPoller
+from pytuiplayer.metadata_index import MetadataIndex
 from pytuiplayer.mpv_player import MPVPlayer
 from pytuiplayer.playlist import PlaylistLoader, PlaylistNavigator
 from pytuiplayer.profiling import profile, profile_async
@@ -105,6 +109,10 @@ class MusicPlayerApp(App):
         self._current_local_source = None
         self._local_meta_source = None
 
+        # Metadata cache (SQLite-backed)
+        METADATA_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.metadata_index = MetadataIndex(METADATA_DB_PATH)
+
         # Controllers
         self.volume_controller = VolumeController(self)
         self.metadata_poller = MetadataPoller(self)
@@ -118,6 +126,11 @@ class MusicPlayerApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Footer()
+
+    async def on_cleanup(self) -> None:
+        """Close database connections on app exit."""
+        if hasattr(self, 'metadata_index'):
+            self.metadata_index.close()
 
     @profile_async
     async def on_mount(self) -> None:
@@ -431,6 +444,34 @@ class MusicPlayerApp(App):
     # === Event handlers ===
 
     @profile_async
+    async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Handle row selection in the local-list DataTable."""
+        if event.data_table.id != "local-list":
+            return
+        if self.option_mode != "local":
+            return
+        # RowKey has a .value attribute containing the string key
+        row_key = event.row_key.value if hasattr(event.row_key, 'value') else str(event.row_key)
+        # Find the item_data by source path (row_key)
+        item_data = self.local_items.get(row_key)
+        if item_data is None:
+            # Try matching by stringified source
+            for data in self.local_items.values():
+                if str(data.get("source")) == row_key:
+                    item_data = data
+                    break
+        if item_data:
+            try:
+                self.play_local(item_data)
+            except Exception as exc:
+                logger.warning("play_local failed for %s: %s", row_key, exc, exc_info=True)
+                try:
+                    title = item_data.get("title", row_key)
+                    self.update_now_playing(f"Failed to play: {title}", "", "⚠")
+                except Exception:
+                    pass
+
+    @profile_async
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         list_id = event.list_view.id
         item = event.item
@@ -490,6 +531,12 @@ class MusicPlayerApp(App):
                     local_screen = self.screen
                     if hasattr(local_screen, 'cancel_pending_local_load'):
                         local_screen.cancel_pending_local_load()
+                except Exception:
+                    pass
+                # Show loading message
+                try:
+                    loading = self.query_one("#loading-status", Static)
+                    loading.update("📂 Loading playlist...")
                 except Exception:
                     pass
                 await self.playlist_loader.load_m3u(path)
@@ -666,28 +713,30 @@ class MusicPlayerApp(App):
                 pass
 
     def _tag_playing_item_for_source(self, source_str: str) -> None:
-        """Find the list item whose data.source matches source_str and tag it."""
+        """Find the row whose key matches source_str and move cursor to it."""
         try:
-            local_list = self.query_one("#local-list", ListView)
-            children = list(getattr(local_list, "children", []))
-            for i, child in enumerate(children):
-                data = getattr(child, "data", None)
-                if isinstance(data, dict):
-                    src = data.get("source")
-                else:
-                    src = getattr(data, "source", None) if data else None
-                if src is not None and str(src) == str(source_str):
-                    self._tag_playing_item(local_list, i)
+            local_list = self.query_one("#local-list", DataTable)
+            for row in local_list.ordered_rows:
+                if str(row.key) == source_str:
+                    local_list.cursor_row = local_list.ordered_rows.index(row)
                     return
-            # No match found — still clear other tags
-            for child in children:
-                child.remove_class("playing", "not-playing")
         except Exception:
             logger.debug("_tag_playing_item_for_source failed", exc_info=True)
 
     @profile
     def play_local(self, path):
         """Play a local file or URL."""
+        try:
+            self._play_local_impl(path)
+        except Exception as exc:
+            logger.warning("play_local failed for %s: %s", path, exc, exc_info=True)
+            try:
+                self.update_now_playing("Failed to play file", "", "⚠")
+            except Exception:
+                logger.debug("update_now_playing failed", exc_info=True)
+
+    def _play_local_impl(self, path):
+        """Internal implementation of play_local."""
         source = None
         meta_label = None
         if isinstance(path, dict):
@@ -740,10 +789,24 @@ class MusicPlayerApp(App):
         # treat as local filesystem path
         try:
             source_path = Path(source_str)
-            try:
-                source_path = source_path.resolve()
-            except Exception:
-                logger.debug("path resolution failed", exc_info=True)
+            # Only resolve if needed (resolve can fail on mounted drives)
+            if not source_path.exists():
+                try:
+                    resolved = source_path.resolve()
+                    if resolved.exists():
+                        source_path = resolved
+                except Exception:
+                    logger.debug("path resolution failed", exc_info=True)
+
+            # Verify file exists before handing to mpv
+            if not source_path.exists():
+                logger.warning("File not found: %s", source_path)
+                try:
+                    self.update_now_playing(f"File not found: {source_path.name}", "", "⚠")
+                except Exception:
+                    logger.debug("update_now_playing failed", exc_info=True)
+                return
+
             self.mpv.play(str(source_path))
         except Exception:
             try:
@@ -791,6 +854,20 @@ class MusicPlayerApp(App):
             self.update_now_playing(title, "Local File", "▶")
         except Exception:
             logger.debug("update_now_playing failed", exc_info=True)
+
+        # Update NowPlaying with real metadata from cache
+        if hasattr(self, 'metadata_index'):
+            try:
+                cached = self.metadata_index.get_track(str(source_path or source_str))
+                if cached:
+                    now = self.query_one(NowPlaying)
+                    if cached.get("sample_rate"):
+                        now._khz = f"{cached['sample_rate'] / 1000:.1f}"
+                    if cached.get("bitrate"):
+                        now._kbps = str(cached["bitrate"] // 1000)
+            except Exception:
+                logger.debug("Failed to update NowPlaying metadata", exc_info=True)
+
         # Track recently-played item (local file).
         try:
             self.history_tracker.record("local", title, source_path or source_str)

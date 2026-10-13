@@ -236,7 +236,7 @@ def test_action_play_playlist_reports_empty_playlist():
 # ---------------------------------------------------------------------------
 # Gap #13 — keyboard binding
 # ---------------------------------------------------------------------------
-def test_playlist_keyboard_binding_plays():
+def test_playlist_keyboard_binding_plays(tmp_path):
     """A binding maps to play_playlist and plays the first playlist item."""
     bindings = {
         b.key: b.action for b in MusicPlayerApp.BINDINGS if hasattr(b, "action")
@@ -247,15 +247,22 @@ def test_playlist_keyboard_binding_plays():
 
     mpv = FakeMPV()
     app = make_app(mpv)
-    data = {"source": Path("/music/first.mp3"), "title": "First", "duration": None}
-    view = FakeListView([FakeItem(data), FakeItem({"source": Path("/music/2.mp3")})])
+
+    # Create real temp files
+    mp3_first = tmp_path / "first.mp3"
+    mp3_first.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+    mp3_second = tmp_path / "2.mp3"
+    mp3_second.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 100)
+
+    data = {"source": mp3_first, "title": "First", "duration": None}
+    view = FakeListView([FakeItem(data), FakeItem({"source": mp3_second})])
     app.query_one = lambda *a, **k: view
 
     # Invoke the action exactly as Textual's key dispatch would.
     with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
         getattr(app, f"action_{bindings[key]}")()
 
-    assert ("play", str(Path("/music/first.mp3"))) in mpv.calls
+    assert ("play", str(mp3_first)) in mpv.calls
 
 
 # ---------------------------------------------------------------------------
@@ -344,9 +351,17 @@ def _mountable_list():
     class FakeList:
         def __init__(self):
             self.items = []
+            self.ordered_columns = []
 
         def clear(self):
             self.items.clear()
+
+        def add_row(self, *values, key=None):
+            self.items.append(values)
+
+        def add_columns(self, *labels):
+            for label in labels:
+                self.ordered_columns.append(label)
 
         async def mount(self, *items):
             self.items.extend(items)
@@ -368,15 +383,15 @@ def test_load_real_radio_m3u_populates(tmp_path):
     asyncio.run(app.load_m3u(src))
 
     # 177 station entries in the dataset (one per non-comment stream line)
-    assert len(fake.items) == 177
-    first = fake.items[0]
-    assert isinstance(first.data, dict)
+    assert len(app.local_items) == 177
+    first = list(app.local_items.values())[0]
+    assert isinstance(first, dict)
     # Every entry is a network stream URL — never resolved to a local file path
-    assert first.data["source"].startswith("http")
-    assert first._meta_label == "- RP MELLOW"
+    assert first["source"].startswith("http")
+    assert first["meta"] == "- RP MELLOW"
     # A title containing ':' is preserved intact (SomaFM EXTINF on a single line)
-    colon = next(it for it in fake.items if "SomaFM" in it._meta_label)
-    assert "SomaFM - Soma Bossa Beyond" == colon._meta_label
+    colon = next(it for it in app.local_items.values() if "SomaFM" in it["meta"])
+    assert "SomaFM - Soma Bossa Beyond" == colon["meta"]
 
 
 def test_real_radio_m3u_entries_play_as_streams():
@@ -388,13 +403,13 @@ def test_real_radio_m3u_entries_play_as_streams():
     app.query_one = lambda *a, **k: fake
     asyncio.run(app.load_m3u(M3U_FIXTURE))
 
-    # Simulate on_list_view_selected for the first station (item.data is a dict)
-    entry = fake.items[0]
+    # Simulate on_list_view_selected for the first station
+    entry = list(app.local_items.values())[0]
     with patch("pytuiplayer.metadata.MutagenFile", return_value=None):
-        app.play_local(entry.data)
+        app.play_local(entry)
 
     assert app.currently_playing == "local"
     assert app._stream_source is True
-    assert app.now_playing_calls[-1] == (entry._meta_label, "Radio", "▶")
-    assert ("play", entry.data["source"]) in app.mpv.calls
+    assert app.now_playing_calls[-1] == (entry["meta"], "Radio", "▶")
+    assert ("play", entry["source"]) in app.mpv.calls
 

@@ -1,88 +1,68 @@
 # AI_TASK_STATE.md
 
 ## Current Branch
-`main` (merged feature/12-ui-polish). 156 tests pass, ruff clean. All commits pushed to origin.
+`feature/13-audio-visualizer-v2` (active, multiple commits ahead of main)
 
 ## Completed This Session
 
 ### Architecture Review (complete)
-- Read and analyzed all source modules: `tui_app.py` (~800 lines), `widgets.py` (216 lines),
-  `screens.py` (272 lines), `playlist.py` (396 lines), `metadata.py` (109 lines), `volume.py`
-  (72 lines), `history.py` (81 lines), `exporter.py` (70 lines), `mpv_player.py` (100 lines),
-  `station_player.py` (39 lines), `utils.py` (48 lines), `types.py` (21 lines), constants.py (18 lines).
-- Read and analyzed all 18 test files in `src/tests/` (156 tests total after adding 9 new).
-- Read SKILL.md, AGENTS.md, ROADMAP.md, CSS, profiling, logging config.
-- Verified baseline: `uv run ruff check .` → All checks passed!; `uv run pytest -q` → 156 passed.
+- Read and analyzed all source modules
+- Verified baseline: 156 tests pass, ruff clean
 
-### UI Review & Rating (complete)
-- **Overall UI rating: 7.5/10 → ~8.5/10** after polish.
-- Documented 10 areas for improvement; 8 were addressed in feature/12-ui-polish.
+### feature/12-ui-polish (MERGED to main)
+All 8 planned items implemented + tested (9 new tests)
 
-### feature/12-ui-polish — UI Improvements (MERGED to main)
-All 8 planned items implemented + tested (9 new tests in `test_feature_12_ui_polish.py`):
+### feature/13-audio-visualizer-v2 — DataTable Migration + Playback Integration
+Migrated from ListView to DataTable with full playback integration.
 
-1. **Active playback indicator in lists** — `.playing` / `.not-playing` CSS classes on
-   ListItems; `play_station` and `play_local` tag the active item via `_tag_playing_item()`
-   and `_tag_playing_item_for_source()`. Inactive entries dimmed to `#666`, active ones
-   highlighted in `#ffd24a` (amber). Done in `tui_app.py` + `musicplayer_tui.css`.
+**New files:**
+- `src/pytuiplayer/metadata_index.py` (~460 lines) — MetadataIndex class
+- `src/tests/test_metadata_index.py` (~580 lines) — 32 tests
+- `src/tests/test_feature_13_fts_search.py` — 19 FTS integration tests
+- `src/tests/test_feature_13_perf.py` — Performance benchmarks
+- `src/tests/test_feature_13_search_profile.py` — Search profiling tests
+- `src/tests/test_data_table_playback.py` — 10 integration tests (NEW)
 
-2. **Current station marker in radio list** — same mechanism as #1; the active station
-   gets the `.playing` class with amber text. Done.
+**Changes:**
+- `constants.py` — Added METADATA_DB_PATH (XDG-compliant)
+- `tui_app.py` — Added `on_data_table_row_selected` handler; wrapped `play_local` in try/except
+- `playlist.py` — Added `add_columns("Track")` guard in both loaders
+- `screens.py` — DataTable support, search wrapped in try/except
+- `widgets.py` — _khz/_kbps now show real values per track
+- `utils.py` — M3U backslash escape handling in resolve_source
 
-3. **Faster marquee** — `NowPlaying._tick()` now advances 2 chars/tick when title > 40 chars
-   (was 1 char/tick regardless). Short titles still advance 1 char/tick. Done in `widgets.py`.
-
-4. **Loading/connection state in NowPlaying** — new `connecting` reactive on `NowPlaying`.
-   `play_station` and URL-branch of `play_local` set `connecting=True`; `_refresh_stream_metadata`
-   clears it when ICY metadata arrives. Render shows "⏳ Connecting..." in the stream row.
-   Done in `widgets.py`, `tui_app.py`, `metadata.py`.
-
-5. **Default local scan to ~/Music** — `LocalScreen._default_music_dir()` returns `~/Music`
-   when it exists, falls back to `$HOME`. Both `compose_mode_content` and `_load_local` use it.
-   Done in `screens.py`.
-
-6. **Wider adaptive VolumeIndicator** — CSS changed from fixed `width: 25` to `width: 1fr`
-   with `min-width: 25` and `max-width: 40`. Done in `musicplayer_tui.css`.
-
-7. **Button press visual feedback** — enhanced `:focus` state (green border + bold) and
-   `:hover` state (brighter background). Note: Textual doesn't support `:pressed` pseudo-class,
-   so focus/hover provide the visual feedback. Done in `musicplayer_tui.css`.
-
-8. **Playlist total time display** — `load_local_files` and `load_m3u` now compute total
-   duration from known item durations and update the loading-status bar (e.g.
-   "📂 Loaded 42 tracks (40 with dur — 02:15:30 total)"). Done in `playlist.py`.
-
-### Tests Added (9 new, all passing)
-- `test_default_music_dir_prefers_home_music` — ~/Music exists → returns it
-- `test_default_music_dir_falls_back_to_home` — no ~/Music → returns $HOME
-- `test_marquee_tick_advances_faster_for_long_titles` — 2 chars/tick for long titles
-- `test_marquee_tick_resets_offset_on_new_title` — offset resets on new track
-- `test_volume_indicator_renders_with_flexible_width` — render still valid
-- `test_now_playing_shows_connecting_state` — "⏳ Connecting..." shown
-- `test_now_playing_connecting_clears_on_meta_arrival` — metadata replaces connecting
-- `test_now_playing_connecting_combines_with_stream` — connecting takes priority
-- `test_load_m3u_shows_total_duration` — total duration in loading status
-
-### Testsuite DB Updated
-- Added `test_feature_12_ui_polish.py` to `FILE_DESCRIPTIONS` in `scripts/update_testsuite_db.py`.
+**Tests:** 230 passed
 
 ## Architectural decisions
-- Packaging path = tag a `v*` on `main` (let `build.yml` build + publish). Never hand-build.
-- Release cadence = 3 merged features → MINOR bump + tag. Ledger in `docs/RELEASE_CADENCE.md`.
-- `mpv` independent of the package (confirmed scope decision).
-- Architecture is well-structured: thin orchestrator + 6 focused controller modules.
-- Textual CSS doesn't support `:pressed` — used `:focus` + `:hover` for button feedback.
-- `brightness` is not a valid Textual CSS property — removed from button hover.
+- Mutagen for metadata extraction (2ms per file vs 331ms for mpv)
+- SQLite for persistent cache (instant re-loads after first scan)
+- FTS5 for full-text search (lightning-fast search across 2000+ tracks)
+- Schema migration for forward-compatible database upgrades
+- mpv independent of the package (confirmed scope decision)
+- Release cadence = 3 merged features → MINOR bump + tag
+- DataTable instead of ListView for local list (virtual scrolling = instant with 1000+ items)
+- Async I/O (asyncio.to_thread) for all file operations to prevent UI lock
 
-## Next Step
-Create `feature/13-audio-visualizer` branch and implement the visualizer:
-- New `visualizer.py` module with `AudioVisualizer` controller
-- NowPlaying gains `v` keybinding to cycle modes (Off → Waveform → Spectrum → VU Meter)
-- Polls mpv for audio samples, renders ASCII art
-- Tests with mock audio data
+## Current State
+- **230 tests pass**
+- ruff clean
+- Branch: `feature/13-audio-visualizer-v2`
 
-After that: feature/15 (configurable keybindings), then feature/14 (station favorites).
+## Performance Profile (2000 items)
+| Operation | Time |
+|-----------|------|
+| Bulk cache lookup (get_tracks_bulk) | 10ms |
+| FTS search | 0.04–8ms |
+| DataTable add_row (NEW) | ~10ms total |
+| Full search flow (NEW) | ~10ms |
+| Loading message | Skipped if all cached |
 
-Remaining ROADMAP Low Priority items (reordered):
-- **Next:** feature/13-audio-visualizer (audio visualization)
-- **Later:** #5 configurable keybindings, #2 station favorites
+## Known Issues (Backlog)
+1. **Visualizer not yet implemented** — waveform/spectrum/VU meter rendering (headline feature)
+2. **ffmpeg decode pipeline** — needed for local file visualization
+
+## Next Steps (When Resuming)
+1. Implement actual audio visualizer (waveform/spectrum/VU meter ASCII art)
+2. Build ffmpeg decode pipeline for local files
+3. Integrate visualizer into NowPlaying widget
+4. More FTS richness — ranking display, search result highlighting
